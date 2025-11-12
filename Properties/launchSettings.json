@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "GraviOS": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}
