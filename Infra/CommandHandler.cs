@@ -297,10 +297,6 @@ namespace GraviOS.Infra
 						break;
 				}
 			}
-			catch (InvalidCastException _)
-			{
-				await arg.RespondAsync("At least one of your parameters was the wrong type! Make sure you're specifying forum threads, not the forum itself.", ephemeral: true);
-			}
 			catch (Exception e)
 			{
 				Console.WriteLine(e.Message);

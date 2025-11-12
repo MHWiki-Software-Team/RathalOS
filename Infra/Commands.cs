@@ -43,7 +43,7 @@ namespace GraviOS.Infra
 		{
 			using (Wiki_DbContext ctxt = new())
 			{
-				int? taskId = (int?)arg.Data.Options?.FirstOrDefault()?.Value;
+				long? taskId = (long?)arg.Data.Options?.FirstOrDefault()?.Value;
 				WikiTask? task = ctxt.WikiTasks
 					.Include(x => x.Creator)
 					.Include(x => x.Updates)
