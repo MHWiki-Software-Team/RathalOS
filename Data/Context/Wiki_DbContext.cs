@@ -1,7 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using RathalOS.Data.Models;
 using System.Configuration;
 
-namespace GraviOS.Data
+namespace RathalOS.Data.Context
 {
 	public class Wiki_DbContext : DbContext
 	{

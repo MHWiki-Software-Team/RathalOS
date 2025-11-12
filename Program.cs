@@ -1,4 +1,4 @@
-﻿using GraviOS.Infra;
+﻿using RathalOS.Infra;
 
 internal class Program
 {

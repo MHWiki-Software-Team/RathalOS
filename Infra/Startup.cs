@@ -4,12 +4,12 @@ using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
 using System.Configuration;
 
-namespace GraviOS.Infra
+namespace RathalOS.Infra
 {
 	public class Startup
 	{
 		private static DiscordSocketClient? _client;
-		private static ServiceProvider _services;
+		private static ServiceProvider? _services;
 
 		public async Task Initialize()
 		{
@@ -38,7 +38,7 @@ namespace GraviOS.Infra
 				await _client.SetGameAsync("The Guild authorizes you to hunt decK for sport.",
 					type: ActivityType.CustomStatus);
 				Console.WriteLine($"Activity set to '{_client.Activity.Name}'");
-				_services.GetRequiredService<CommandHandler>().Initialize(_client);
+				_services!.GetRequiredService<InteractionEngine>().Initialize(_client);
 			}
 			catch (Exception e)
 			{
@@ -65,7 +65,7 @@ namespace GraviOS.Infra
 			return new ServiceCollection()
 				.AddSingleton<DiscordSocketClient>()
 				.AddSingleton<CommandService>()
-				.AddSingleton<CommandHandler>()
+				.AddSingleton<InteractionEngine>()
 				.BuildServiceProvider();
 		}
 	}

@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace GraviOS.Migrations
+namespace RathalOS.Migrations
 {
     /// <inheritdoc />
     public partial class Archived : Migration

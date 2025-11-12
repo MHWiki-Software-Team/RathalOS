@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "GraviOS": {
+    "RathalOS": {
       "commandName": "Project"
     },
     "Container (Dockerfile)": {
