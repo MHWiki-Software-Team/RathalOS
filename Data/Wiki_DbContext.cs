@@ -27,6 +27,7 @@ namespace GraviOS.Data
 
 		protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
 		{
+			//If you want to use a different storage solution, change this to any of the other available DbContextOptionsBuilder methods for EFCore.
 			optionsBuilder.UseSqlServer(ConfigurationManager.AppSettings.Get("DBConnString"));
 			base.OnConfiguring(optionsBuilder);
 		}
