@@ -182,24 +182,17 @@ __*Assignees:*__
 		{
 			using (Wiki_DbContext ctxt = new())
 			{
-				ISocketMessageChannel? chnl = (ISocketMessageChannel?)arg.Data.Options?.FirstOrDefault(x => x.Name == "channel")?.Value;
-				string? name = (string?)arg.Data.Options?.FirstOrDefault(x => x.Name == "title")?.Value;
-				if (chnl != null || !string.IsNullOrEmpty(name))
+				long? taskId = (long?)arg.Data.Options?.FirstOrDefault()?.Value;
+				WikiTask? task = ctxt.WikiTasks.Include(x => x.Creator).Include(x => x.Updates).ThenInclude(x => x.Creator)
+					.FirstOrDefault(x => taskId != null ? x.Id == taskId.Value : x.ChannelID == arg.ChannelId!.Value);
+				if (task != null)
 				{
-					WikiTask? task = ctxt.WikiTasks.Include(x => x.Creator).Include(x => x.Updates).ThenInclude(x => x.Creator).FirstOrDefault(x => chnl != null ? x.ChannelID == chnl.Id : x.Title == name);
-					if (task != null)
-					{
-						await CommandHandler.DeleteTask(task.ChannelID);
-						await arg.RespondAsync("Task deleted!", ephemeral: true);
-					}
-					else
-					{
-						await arg.RespondAsync("The specified thread is not a valid forum thread, or no task exists!", ephemeral: true);
-					}
+					await CommandHandler.DeleteTask(task.ChannelID);
+					await arg.RespondAsync("Task deleted!", ephemeral: true);
 				}
 				else
 				{
-					await arg.RespondAsync("You need to enter either a thread or a task title to delete a task!", ephemeral: true);
+					await arg.RespondAsync("The specified thread is not a valid forum thread, or no task exists!", ephemeral: true);
 				}
 			}
 		}
