@@ -9,4 +9,4 @@ Once you have your bot set up, fill in the values in the [App.config.template](h
 
 This bot is containerized through Docker. This means that, to run the bot, you'll need Docker tools installed on your machine. If you're using Visual Studio, you can just install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and run it. Your solution will attach to your Docker Desktop installation and take care of the rest.
 
-You'll also need to either have a SQL Server to attach the bot DB to, or you'll have to change the storage solution in the [Wiki_DbContext.cs](https://github.com/MHWiki-Software-Team/RathalOS/blob/main/Data/Wiki_DbContext.cs) to refer to whatever storage solution you'd prefer to use.
+You'll also need to either have a SQL Server to attach the bot DB to, or you'll have to change the storage solution in the [Wiki_DbContext.cs](https://github.com/MHWiki-Software-Team/RathalOS/blob/main/Data/Context/Wiki_DbContext.cs) to refer to whatever storage solution you'd prefer to use.
