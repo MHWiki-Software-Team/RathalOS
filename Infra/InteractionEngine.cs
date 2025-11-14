@@ -1,402 +1,308 @@
-﻿using Discord;
-using Discord.Net;
-using Discord.WebSocket;
+﻿using ClosedXML.Excel;
+using Discord;
+using Discord.Interactions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
-using System.Configuration;
-using RathalOS.Data.Models;
 using RathalOS.Data.Context;
+using RathalOS.Data.Models;
 using System.Text;
 
 namespace RathalOS.Infra
 {
-	public class InteractionEngine(IServiceProvider services)
+	public class InteractionEngine : InteractionModuleBase
 	{
-		private DiscordSocketClient _client = services.GetRequiredService<DiscordSocketClient>();
-		private ulong _validThread;
-		private object _lock { get; set; } = new object();
-		private static readonly List<ulong> _taskThreadIds = [];
-		public static IUser? Owner { get; set; }
+		private static readonly string[] _validListOrders =  ["title", "time", "lastupdated", "status"];
 
-		[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1862:Use the 'StringComparison' method overloads to perform case-insensitive string comparisons", Justification = "<Pending>")]
-		public void Initialize(DiscordSocketClient client)
+		[SlashCommand("view", "Views task details for the specified thread. Default: current")]
+		public async Task ViewCommand([Summary("task", "The task to target."), Autocomplete(typeof(TaskAutocomplete))] int? taskId = null)
 		{
-			_client = client;
-			//TODO: Register the commands as global commands instead of guild-specific
-			//TODO: Remove global command registration once added so it only runs once
-			SocketGuild testGuild = _client.Guilds.First(x => x.Id == 1311754186995666964);
-			//TODO: Grab the appropriate forum id when the bot first runs.
-			//In an ideal environment, this would be done via a setup command run by admins, but since this is a one-server bot, it really isn't worth the extra command
-			SocketForumChannel taskForum = testGuild.ForumChannels.First(x => x.Id == 1438718944922828871);
-			_validThread = taskForum.Id;
-			_client.ThreadCreated += _client_ThreadCreated;
-			_client.ThreadUpdated += _client_ThreadUpdated;
-			_client.ThreadDeleted += _client_ThreadDeleted;
-			_client.ThreadMemberJoined += _client_ThreadMemberJoined;
-			_client.ThreadMemberLeft += _client_ThreadMemberLeft;
-			_client.SlashCommandExecuted += _client_SlashCommandExecuted;
-			_client.MessageReceived += _client_MessageReceived;
-			//Uncomment to register commands
-			//CreateCommands(testGuild);
-			using (Wiki_DbContext ctxt = new())
+			using Wiki_DbContext ctxt = new();
+			WikiTask? task = ctxt.WikiTasks
+				.Include(x => x.Creator)
+				.Include(x => x.Updates)
+					.ThenInclude(x => x.Creator)
+				.Include(x => x.Assigned)
+					.ThenInclude(x => x.Assignee)
+				.FirstOrDefault(x => taskId != null ? x.Id == taskId.Value : x.ChannelID == Context.Channel.Id);
+			if (task != null)
 			{
-				_taskThreadIds.AddRange(ctxt.WikiTasks.Select(x => x.ChannelID));
-			}
-			Owner = testGuild.Users.First(x => x.Username.ToUpper() == ConfigurationManager.AppSettings.Get("BotOwner")!.ToUpper());
-		}
+				StringBuilder sb = new();
+				string activity = !task.Stale && !task.Completed && !task.NeedsUpdate && !task.OnHold ? " 💬 Active" : "";
+				sb.AppendLine(@$"__*Description:*__ 
+{task.Description}
 
-		private void CreateCommands(SocketGuild guild)
-		{
-			SlashCommandOptionBuilder taskOption = new SlashCommandOptionBuilder()
-				.WithName("task")
-				.WithType(ApplicationCommandOptionType.Integer)
-				.WithDescription("The task to target.")
-				.WithRequired(false);
-			using (Wiki_DbContext ctxt = new())
-			{
-				foreach (WikiTask task in ctxt.WikiTasks.Include(x => x.Creator).OrderBy(x => x.Title))
+__*Updates:*__");
+				foreach (WikiTaskUpdate update in task.Updates.OrderBy(x => x.TimeStamp))
 				{
-					SocketGuildUser? usr = guild.Users.FirstOrDefault(x => x.Id == task.Creator.UserID);
-					string userName = usr == null ? task.Creator.Username + " (no longer in server)" : usr!.DisplayName;
-					taskOption.AddChoice($"{task.Title} - from {userName}", task.Id);
+					sb.AppendLine($"* {TimestampTag.FormatFromDateTime(update.TimeStamp, TimestampTagStyles.ShortDateTime)} - {update.Update} [{MentionUtils.MentionUser(update.Creator!.UserID)}]");
 				}
-			}
-			SlashCommandBuilder[] cmds = [
-				new SlashCommandBuilder()
-					.WithName("update")
-					.WithDescription("Updates task progress.")
-					.AddOption("content", ApplicationCommandOptionType.String, "The content of the update.", isRequired: true),
-				new SlashCommandBuilder()
-					.WithName("view")
-					.AddOption(taskOption)
-					.WithDescription("Views task details for the specified thread. Default: current thread"),
-				new SlashCommandBuilder()
-					.WithName("list")
-					.AddOption(new SlashCommandOptionBuilder()
-						.WithName("order")
-						.WithType(ApplicationCommandOptionType.String)
-						.WithDescription("The column to order by (default: title).")
-						.WithRequired(false)
-						.AddChoice("time", "time")
-						.AddChoice("title", "title")
-						.AddChoice("lastupdated", "lastupdated")
-						.AddChoice("status", "status"))
-					.AddOption("descending", ApplicationCommandOptionType.Boolean, "Whether you'd like the order to be reversed (true) or not (false). Default is false.", isRequired: false)
-					.AddOption("archived", ApplicationCommandOptionType.Boolean, "Whether you'd like to include archived tasks (true) or not (false). Default is false.", isRequired: false)
-					.WithDescription("Lists all tasks."),
-				new SlashCommandBuilder()
-					.WithName("delete")
-					.AddOption(taskOption)
-					.WithDescription("Deletes task without deleting the thread."),
-				new SlashCommandBuilder()
-					.WithName("edit-description")
-					.AddOption(taskOption)
-					.AddOption("content", ApplicationCommandOptionType.String, "The content of the new description.", isRequired: true)
-					.WithDescription("Updates the description of the specified task."),
-				new SlashCommandBuilder()
-					.WithName("export")
-					.WithDescription("Exports all tasks, archived or otherwise, to an .xlsx file.")
-			];
-			try
-			{
-				IReadOnlyCollection<SocketApplicationCommand> installedCommands = _client.GetGlobalApplicationCommandsAsync().Result;
-				foreach (SlashCommandBuilder cmd in cmds.Where(x => !installedCommands.Any(y => y.Name == x.Name)))
+				sb.AppendLine($@"
+__*Status:*__{(task.Stale ? "\r\n💤	Stale" : "")}{(task.Completed ? "\r\n✅	Completed" : "")}{(task.NeedsUpdate ? "\r\n📋	Needs Update" : "")}{(task.OnHold ? "\r\n⏸️	On Hold" : "")}{activity}
+
+__*Assignees:*__
+{string.Join(", ", task.Assigned.Where(x => x.Assignee != null).Select(x => MentionUtils.MentionUser(x.Assignee!.UserID)))}");
+				string channelMention = task.Title;
+				bool exists = await Utilities.ChannelExists(task.ChannelID);
+				if (exists)
 				{
-					_client.CreateGlobalApplicationCommandAsync(cmd.Build());
+					channelMention = MentionUtils.MentionChannel(task.ChannelID);
 				}
-				foreach (SocketApplicationCommand command in installedCommands.Where(x => !cmds.Any(y => y.Name == x.Name)))
-				{
-					command.DeleteAsync().Wait();
-				}
-			}
-			catch (HttpException e)
-			{
-				var json = JsonConvert.SerializeObject(e.Errors, Formatting.Indented);
-				Console.WriteLine(json);
 				EmbedBuilder builder = new()
 				{
-					Title = "An exception occurred within RathalOS!",
-					Description = JsonConvert.SerializeObject(e, Formatting.Indented)
+					Title = $"{channelMention}",
+					Description = sb.ToString()
 				};
-				Owner.SendMessageAsync(embed: builder.Build()).Wait();
+				await RespondAsync(embed: builder.Build(), ephemeral: true);
+			}
+			else
+			{
+				await RespondAsync("The specified thread is not a valid forum thread, or no task exists!", ephemeral: true);
 			}
 		}
 
-		[System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1868:Unnecessary call to 'Contains(item)'", Justification = "<Pending>")]
-		public static async Task DeleteTask(ulong channelId)
+		[SlashCommand("update", "Updates task progress.")]
+		public async Task UpdateCommand([Summary("content", "The content of the update.")] string content)
 		{
-			if (_taskThreadIds.Contains(channelId))
+			using Wiki_DbContext ctxt = new();
+			WikiTask? task = ctxt.WikiTasks.Include(x => x.Updates).FirstOrDefault(x => x.ChannelID == Context.Channel.Id);
+			if (task != null)
 			{
-				_taskThreadIds.Remove(channelId);
-				using Wiki_DbContext ctxt = new();
-				WikiTask? task = ctxt.WikiTasks.Include(x => x.Updates).FirstOrDefault(x => x.ChannelID == channelId);
-				if (task != null)
+				WikiUser? user = ctxt.WikiUsers.FirstOrDefault(x => x.UserID == Context.User.Id);
+				user ??= new()
 				{
-					ctxt.WikiTaskUpdates.RemoveRange(task.Updates);
-					ctxt.AssignedTasks.RemoveRange(ctxt.AssignedTasks.Where(x => x.Assignment != null && x.Assignment.Id == task.Id));
-					ctxt.WikiTasks.Remove(task);
-					await ctxt.SaveChangesAsync();
-				}
-			}
-		}
-
-		private Task _client_ThreadMemberLeft(SocketThreadUser arg)
-		{
-			if (_taskThreadIds.Contains(arg.Thread.Id))
-			{
-				using Wiki_DbContext ctxt = new();
-				WikiUser? user = ctxt.WikiUsers.FirstOrDefault(x => x.UserID == arg.Id);
-				if (user == null)
+					UserID = Context.User.Id,
+					Username = Context.User.Username
+				};
+				task.Updates.Add(new WikiTaskUpdate()
 				{
-					user = new WikiUser()
-					{
-						UserID = arg.Id,
-						Username = arg.Username
-					};
-					ctxt.WikiUsers.Add(user);
-					ctxt.SaveChanges();
-				}
-				WikiTask? task = ctxt.WikiTasks.Include(x => x.Updates).FirstOrDefault(x => x.ChannelID == arg.Thread.Id);
-				if (task != null)
-				{
-					ctxt.AssignedTasks.RemoveRange(ctxt.AssignedTasks.Where(x => x.Assignee != null && x.Assignee.UserID == arg.Id));
-					task.Assigned = [.. task.Assigned.Where(x => !(x.Assignee != null && x.Assignee.UserID == arg.Id))];
-					ctxt.SaveChanges();
-				}
-			}
-			return Task.CompletedTask;
-		}
-
-		private Task _client_ThreadMemberJoined(SocketThreadUser arg)
-		{
-			if (_taskThreadIds.Contains(arg.Thread.Id))
-			{
-				using Wiki_DbContext ctxt = new();
-				WikiUser? user = ctxt.WikiUsers.FirstOrDefault(x => x.UserID == arg.Id);
-				if (user == null)
-				{
-					user = new WikiUser()
-					{
-						UserID = arg.Id,
-						Username = arg.Username
-					};
-					ctxt.WikiUsers.Add(user);
-					ctxt.SaveChanges();
-				}
-				WikiTask? task = ctxt.WikiTasks.Include(x => x.Updates).FirstOrDefault(x => x.ChannelID == arg.Thread.Id);
-				if (task != null)
-				{
-					task.Assigned.Add(new AssignedTask()
-					{
-						Assignee = user
-					});
-					ctxt.SaveChanges();
-				}
-			}
-			return Task.CompletedTask;
-		}
-
-		private async Task _client_ThreadDeleted(Cacheable<SocketThreadChannel, ulong> arg)
-		{
-			await DeleteTask(arg.Id);
-		}
-
-		private async Task _client_ThreadUpdated(Cacheable<SocketThreadChannel, ulong> arg1, SocketThreadChannel arg2)
-		{
-			if (_taskThreadIds.Contains(arg2.Id))
-			{
-				using Wiki_DbContext ctxt = new();
-				WikiTask task = await ctxt.WikiTasks.FirstAsync(x => x.ChannelID == arg2.Id);
-				bool taskIsComplete = arg2.Name.Contains("(COMPLETED)", StringComparison.CurrentCultureIgnoreCase);
-				bool taskOnHold = arg2.Name.Contains("(HOLD)", StringComparison.CurrentCultureIgnoreCase);
-				bool taskArchive = arg2.Name.Contains("(ARCHIVE)", StringComparison.CurrentCultureIgnoreCase);
-				bool anyChanges = false;
-				IForumChannel prnt = (IForumChannel)arg2.ParentChannel;
-				string[] currentTags = [.. prnt.Tags.Where(x => arg2.AppliedTags.Contains(x.Id)).Select(x => x.Name)];
-				string parsedName = arg2.Name.Replace("(COMPLETED)", "", StringComparison.CurrentCultureIgnoreCase)
-					.Replace("(HOLD)", "", StringComparison.CurrentCultureIgnoreCase)
-					.Replace("(ARCHIVE)", "", StringComparison.CurrentCultureIgnoreCase)
-					.Trim();
-				if (task.Title != parsedName)
-				{
-					task.Title = parsedName;
-					anyChanges = true;
-				}
-				string[] originalTags = task.TagsCSV.Split(",");
-				if (!currentTags.SequenceEqual(task.TagsCSV.Split(",")))
-				{
-					task.TagsCSV = string.Join(",", currentTags);
-					anyChanges = true;
-				}
-				if (taskIsComplete && !task.Completed)
-				{
-					task.Completed = true;
-					task.CompletedOn = DateTime.UtcNow;
-					anyChanges = true;
-				}
-				else if (!taskIsComplete && task.Completed)
-				{
-					task.Completed = false;
-					task.CompletedOn = null;
-					anyChanges = true;
-				}
-				if (taskOnHold && !task.OnHold)
-				{
-					task.OnHold = true;
-					anyChanges = true;
-				}
-				else if (!taskOnHold && task.OnHold)
-				{
-					task.OnHold = false;
-					anyChanges = true;
-				}
-				if (taskArchive && !task.Archived)
-				{
-					task.Archived = true;
-					anyChanges = true;
-				}
-				else if (!taskArchive && task.Archived)
-				{
-					task.Archived = false;
-					anyChanges = true;
-				}
-				if (anyChanges)
-				{
-					task.LastActive = DateTime.UtcNow;
-					await ctxt.SaveChangesAsync();
-				}
-				if (!currentTags.SequenceEqual(originalTags))
-				{
-					bool rolesTagged = false;
-					StringBuilder sb = new();
-					sb.AppendLine("A tag has been added to this task! The following role has been added due to their potential interest and/or assistance needed in this thread:");
-					string[] newTags = [..currentTags.Where(x => !originalTags.Contains(x))];
-					foreach (string tag in newTags)
-					{
-						SocketRole? role = arg2.Guild.Roles.FirstOrDefault(x => x.Name.Equals(tag, StringComparison.CurrentCultureIgnoreCase));
-						if (role != null)
-						{
-							sb.AppendLine(MentionUtils.MentionRole(role.Id));
-							rolesTagged = true;
-						}
-					}
-					if (rolesTagged)
-					{
-						await arg2.SendMessageAsync(sb.ToString());
-					}
-				}
-			}
-		}
-
-		private async Task _client_MessageReceived(SocketMessage arg)
-		{
-			if (_taskThreadIds.Contains(arg.Channel.Id)) 
-			{
-				using Wiki_DbContext ctxt = new();
-				WikiTask task = await ctxt.WikiTasks.FirstAsync(x => x.ChannelID == arg.Channel.Id);
-				task.LastActive = DateTime.UtcNow;
+					Creator = user,
+					TimeStamp = DateTime.UtcNow,
+					Update = content
+				});
+				task.LastUpdate = DateTime.UtcNow;
+				ctxt.Update(task);
 				await ctxt.SaveChangesAsync();
+				await RespondAsync("Task updated!", ephemeral: true);
+			}
+			else
+			{
+				await RespondAsync("The channel you're in is not a valid forum thread, or no task exists!", ephemeral: true);
 			}
 		}
 
-		private async Task _client_SlashCommandExecuted(SocketSlashCommand arg)
+		[SlashCommand("edit-description", "Updates the description of the specified task. Default: current")]
+		public async Task EditDescription([Summary("content", "The content of the new description.")] string content, [Summary("task", "The task to target."), Autocomplete(typeof(TaskAutocomplete))] int? taskId = null)
 		{
-			try
+			using Wiki_DbContext ctxt = new();
+			WikiTask? task = ctxt.WikiTasks.FirstOrDefault(x => taskId != null ? x.Id == taskId.Value : x.ChannelID == Context.Channel.Id);
+			if (task != null)
 			{
-				switch (arg.Data.Name)
+				task.Description = content;
+				await ctxt.SaveChangesAsync();
+				await RespondAsync("Description updated!", ephemeral: true);
+			}
+			else
+			{
+				await RespondAsync("The specified thread is not a valid forum thread, or no task exists!", ephemeral: true);
+			}
+		}
+
+		[SlashCommand("export", "Exports all tasks, archived or otherwise, to an .xlsx file.")]
+		public async Task Export()
+		{
+			await DeferAsync(true);
+			using Wiki_DbContext ctxt = new();
+			using MemoryStream stream = new();
+			using (XLWorkbook workbook = new())
+			{
+				IXLWorksheet current = workbook.AddWorksheet("Current");
+				IXLWorksheet archived = workbook.AddWorksheet("Archived");
+				IXLWorksheet all = workbook.AddWorksheet("All");
+				List<WikiTask> allTasks = [..ctxt.WikiTasks.Include(x => x.Creator)
+							.Include(x => x.Updates)
+								.ThenInclude(x => x.Creator)
+							.Include(x => x.Assigned)
+								.ThenInclude(x => x.Assignee)];
+				DateTime archiveIgnore = DateTime.UtcNow.AddDays(-30);
+				string[] headers = ["Title", "Creator", "Status", "Created", "Last Active", "Last Updated On", "Completed On", "Description", "Last Update", "Tags CSV", "Assigned Users CSV"];
+				for (int i = 1; i <= headers.Length; i++)
 				{
-					case "update":
-						await Commands.Update(arg);
+					current.Cell(1, i).SetValue(headers[i - 1]);
+					archived.Cell(1, i).SetValue(headers[i - 1]);
+					all.Cell(1, i).SetValue(headers[i - 1]);
+				}
+				int rowCnt = 2;
+				foreach (WikiTask task in allTasks.Where(x => !x.Archived && (x.CompletedOn == null || (x.CompletedOn != null && x.CompletedOn.Value > archiveIgnore))))
+				{
+					current.Cell(rowCnt, 1).SetValue(task.Title);
+					current.Cell(rowCnt, 2).SetValue(task.Creator?.Username ?? "");
+					current.Cell(rowCnt, 3).SetValue(task.Archived ? "Archived" : task.Completed ? "Completed" : task.OnHold ? "On Hold" : task.Stale ? "Stale" : task.NeedsUpdate ? "Needs Update" : "Active");
+					current.Cell(rowCnt, 4).SetValue(task.TimeStamp.ToString("G"));
+					current.Cell(rowCnt, 5).SetValue(task.LastActive.ToString("G"));
+					current.Cell(rowCnt, 6).SetValue(task.LastUpdate.ToString("G"));
+					current.Cell(rowCnt, 7).SetValue(task.CompletedOn?.ToString("G") ?? "");
+					current.Cell(rowCnt, 8).SetValue(task.Description);
+					current.Cell(rowCnt, 9).SetValue(task.Updates.OrderByDescending(x => x.TimeStamp).FirstOrDefault()?.Update ?? "");
+					current.Cell(rowCnt, 10).SetValue(task.TagsCSV);
+					current.Cell(rowCnt, 11).SetValue(string.Join(",", task.Assigned.Select(x => x.Assignee!.Username)));
+					rowCnt++;
+				}
+				rowCnt = 2;
+				foreach (WikiTask task in allTasks.Where(x => x.Archived || (x.CompletedOn != null && x.CompletedOn.Value < archiveIgnore)))
+				{
+					archived.Cell(rowCnt, 1).SetValue(task.Title);
+					archived.Cell(rowCnt, 2).SetValue(task.Creator?.Username ?? "");
+					archived.Cell(rowCnt, 3).SetValue("Archived");
+					archived.Cell(rowCnt, 4).SetValue(task.TimeStamp.ToString("G"));
+					archived.Cell(rowCnt, 5).SetValue(task.LastActive.ToString("G"));
+					archived.Cell(rowCnt, 6).SetValue(task.LastUpdate.ToString("G"));
+					archived.Cell(rowCnt, 7).SetValue(task.CompletedOn?.ToString("G") ?? "");
+					archived.Cell(rowCnt, 8).SetValue(task.Description);
+					archived.Cell(rowCnt, 9).SetValue(task.Updates.OrderByDescending(x => x.TimeStamp).FirstOrDefault()?.Update ?? "");
+					archived.Cell(rowCnt, 10).SetValue(task.TagsCSV);
+					archived.Cell(rowCnt, 11).SetValue(string.Join(",", task.Assigned.Select(x => x.Assignee!.Username)));
+					rowCnt++;
+				}
+				rowCnt = 2;
+				foreach (WikiTask task in allTasks)
+				{
+					all.Cell(rowCnt, 1).SetValue(task.Title);
+					all.Cell(rowCnt, 2).SetValue(task.Creator?.Username ?? "");
+					all.Cell(rowCnt, 3).SetValue(task.Archived ? "Archived" : task.Completed ? "Completed" : task.OnHold ? "On Hold" : task.Stale ? "Stale" : task.NeedsUpdate ? "Needs Update" : "Active");
+					all.Cell(rowCnt, 4).SetValue(task.TimeStamp.ToString("G"));
+					all.Cell(rowCnt, 5).SetValue(task.LastActive.ToString("G"));
+					all.Cell(rowCnt, 6).SetValue(task.LastUpdate.ToString("G"));
+					all.Cell(rowCnt, 7).SetValue(task.CompletedOn?.ToString("G") ?? "");
+					all.Cell(rowCnt, 8).SetValue(task.Description);
+					all.Cell(rowCnt, 9).SetValue(task.Updates.OrderByDescending(x => x.TimeStamp).FirstOrDefault()?.Update ?? "");
+					all.Cell(rowCnt, 10).SetValue(task.TagsCSV);
+					all.Cell(rowCnt, 11).SetValue(string.Join(",", task.Assigned.Select(x => x.Assignee!.Username)));
+					rowCnt++;
+				}
+				current.Row(1).Style.Font.Bold = true;
+				current.Columns().AdjustToContents();
+				archived.Row(1).Style.Font.Bold = true;
+				archived.Columns().AdjustToContents();
+				all.Row(1).Style.Font.Bold = true;
+				all.Columns().AdjustToContents();
+				workbook.SaveAs(stream);
+			}
+			using FileAttachment attachment = new(stream, "MHWiki_Tasks_Export.xlsx");
+			await DeleteOriginalResponseAsync();
+			await FollowupWithFileAsync(attachment, ephemeral: true);
+		}
+
+		[SlashCommand("delete", "Deletes task without deleting the thread.")]
+		public async Task Delete([Summary("task", "The task to target."), Autocomplete(typeof(TaskAutocomplete))] int? taskId = null)
+		{
+			using Wiki_DbContext ctxt = new();
+			WikiTask? task = ctxt.WikiTasks.Include(x => x.Creator).Include(x => x.Updates).ThenInclude(x => x.Creator)
+				.FirstOrDefault(x => taskId != null ? x.Id == taskId.Value : x.ChannelID == Context.Channel.Id);
+			if (task != null)
+			{
+				await Utilities.DeleteTask(task.ChannelID);
+				await RespondAsync("Task deleted!", ephemeral: true);
+			}
+			else
+			{
+				await RespondAsync("The specified thread is not a valid forum thread, or no task exists!", ephemeral: true);
+			}
+		}
+
+		[SlashCommand("list", "Lists all tasks.")]
+		public async Task List(
+			[Summary("order", "The column to order by (default: title)."), Choice("time", "time"), Choice("title", "title"), Choice("lastupdated", "lastupdated"), Choice("status", "status")] 
+			string order = "title",
+			[Summary("descending", "Whether you'd like the order to be reversed (true) or not (false). Default is false.")]
+			bool desc = false,
+			[Summary("archived", "Whether you'd like to include archived tasks (true) or not (false). Default is false.")]
+			bool includeArchived = false)
+		{
+			if (_validListOrders.Contains(order))
+			{
+				using Wiki_DbContext ctxt = new();
+				StringBuilder sb = new();
+				sb.AppendLine($"|- 💬 Active -|- ✅ Completed -|- ⏸️ On Hold -|- 📋 Needs Update -|- 💤 Stale -|{(includeArchived ? "- 🔒 Archived -|" : "")}");
+				DateTime archiveIgnore = DateTime.UtcNow.AddDays(-30);
+				List<WikiTask> tasks = [..ctxt.WikiTasks
+						.Include(x => x.Creator)
+						.Where(x => (!x.Archived && (x.CompletedOn == null || (x.CompletedOn != null && x.CompletedOn.Value > archiveIgnore))) || includeArchived)];
+				switch (order.ToLower())
+				{
+					case "title":
+						if (desc)
+						{
+							tasks = [.. tasks.OrderByDescending(x => x.Title)];
+						}
+						else
+						{
+							tasks = [.. tasks.OrderBy(x => x.Title)];
+						}
 						break;
-					case "view":
-						await Commands.View(arg);
+					case "time":
+						if (desc)
+						{
+							tasks = [.. tasks.OrderByDescending(x => x.TimeStamp)];
+						}
+						else
+						{
+							tasks = [.. tasks.OrderBy(x => x.TimeStamp)];
+						}
 						break;
-					case "list":
-						await Commands.List(arg);
+					case "status":
+						if (desc)
+						{
+							tasks = [.. tasks.OrderByDescending(x => x.Completed ? 1 : x.NeedsUpdate ? 2 : x.Stale ? 3 : x.OnHold ? 4 : 5)];
+						}
+						else
+						{
+							tasks = [.. tasks.OrderBy(x => x.Completed ? 1 : x.NeedsUpdate ? 2 : x.Stale ? 3 : x.OnHold ? 4 : 5)];
+						}
 						break;
-					case "delete":
-						await Commands.Delete(arg);
+					case "lastupdated":
+						if (desc)
+						{
+							tasks = [.. tasks.OrderByDescending(x => x.LastUpdate)];
+						}
+						else
+						{
+							tasks = [.. tasks.OrderBy(x => x.LastUpdate)];
+						}
 						break;
-					case "export":
-						await Commands.Export(arg);
-						break;
-					case "edit-description":
-						await Commands.EditDescription(arg);
+					default:
 						break;
 				}
-			}
-			catch (Exception e)
-			{
-				Console.WriteLine(e.Message);
+				foreach (WikiTask task in tasks)
+				{
+					string channelMention = task.Title;
+					bool exists = await Utilities.ChannelExists(task.ChannelID);
+					if (exists)
+					{
+						channelMention = MentionUtils.MentionChannel(task.ChannelID);
+					}
+					string activity = !task.Stale && !task.Completed && !task.NeedsUpdate && !task.OnHold && !task.Archived ? " 💬" : "";
+					sb.AppendLine(@$"* **{(task.Archived ? " 🔒" : "")}{(task.Stale ? " 💤" : "")}{(task.Completed ? " ✅" : "")}{(task.NeedsUpdate ? " 📋" : "")}{(task.OnHold ? " ⏸️" : "")}{activity} - {channelMention}**");
+				}
 				EmbedBuilder builder = new()
 				{
-					Title = "An exception occurred within RathalOS!",
-					Description = JsonConvert.SerializeObject(e, Formatting.Indented)
+					Title = "Current Tasks",
+					Description = sb.ToString()
 				};
-				await Owner.SendMessageAsync(embed: builder.Build());
+				await RespondAsync(embed: builder.Build(), ephemeral: true);
+			}
+			else
+			{
+				await RespondAsync("Your sort order is not valid!", ephemeral: true);
 			}
 		}
+	}
 
-		private Task _client_ThreadCreated(SocketThreadChannel arg)
+	public class TaskAutocomplete : AutocompleteHandler
+	{
+#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
+		public override async Task<AutocompletionResult> GenerateSuggestionsAsync(IInteractionContext context, IAutocompleteInteraction autocompleteInteraction, IParameterInfo parameter, IServiceProvider services)
+#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
 		{
-			if (arg.ParentChannel.ChannelType == ChannelType.Forum && arg.ParentChannel.Id == _validThread && !_taskThreadIds.Contains(arg.Id))
-			{
-				lock (_lock)
-				{
-					using Wiki_DbContext ctxt = new();
-					if (!ctxt.WikiTasks.Any(x => x.ChannelID == arg.Id))
-					{
-						IForumChannel chnl = (IForumChannel)arg.ParentChannel;
-						_taskThreadIds.Add(arg.Id);
-						WikiUser? user = ctxt.WikiUsers.FirstOrDefault(x => x.UserID == arg.Owner.Id);
-						if (user == null)
-						{
-							user = new WikiUser()
-							{
-								UserID = arg.Owner.Id,
-								Username = arg.Owner.Username
-							};
-							ctxt.WikiUsers.Add(user);
-							ctxt.SaveChanges();
-						}
-						string[] tags = [.. chnl.Tags.Where(x => arg.AppliedTags.Contains(x.Id)).Select(x => x.Name)];
-						ctxt.WikiTasks.Add(new WikiTask()
-						{
-							Title = arg.Name,
-							ChannelID = arg.Id,
-							TimeStamp = DateTime.UtcNow,
-							LastUpdate = DateTime.UtcNow,
-							LastActive = DateTime.UtcNow,
-							Description = ((IMessage[])arg.GetMessagesAsync(1).FlattenAsync().Result).First().Content,
-							Creator = user,
-							TagsCSV = string.Join(",", tags),
-							Assigned =
-							[
-								new AssignedTask() { Assignee = user }
-							]
-						});
-						ctxt.SaveChanges();
-						bool rolesTagged = false;
-						StringBuilder sb = new();
-						sb.AppendLine("A new task has been created! The following role(s) have been notified due to their potential interest and/or assistance needed in this thread:");
-						foreach (string tag in tags.Distinct())
-						{
-							SocketRole? role = arg.Guild.Roles.FirstOrDefault(x => x.Name.Equals(tag, StringComparison.CurrentCultureIgnoreCase));
-							if (role != null)
-							{
-								sb.AppendLine(MentionUtils.MentionRole(role.Id));
-								rolesTagged = true;
-							}
-						}
-						if (rolesTagged)
-						{
-							arg.SendMessageAsync(sb.ToString());
-						}
-					}
-				}
-			}
-			return Task.CompletedTask;
+			return AutocompletionResult.FromSuccess(Utilities.TaskResults.Take(25));
 		}
 	}
 }

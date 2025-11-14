@@ -2,6 +2,8 @@
 <configuration>
 	<appSettings>
 		<add key="BotOwner" value="" />
+		<add key="ServerID" value="" />
+		<add key="ForumID" value="" />
 		<add key="Token" value="" />
 		<add key="DBConnString" value="" />
 	</appSettings>

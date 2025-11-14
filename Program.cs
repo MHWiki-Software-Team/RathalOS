@@ -2,5 +2,5 @@
 
 internal class Program
 {
-	private static void Main(string[] args) => new Startup().Initialize().GetAwaiter().GetResult();
+	private static void Main(string[] args) => new Utilities().Initialize().GetAwaiter().GetResult();
 }
