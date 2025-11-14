@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 using System.Configuration;
 using RathalOS.Data.Models;
 using RathalOS.Data.Context;
+using System.Text;
 
 namespace RathalOS.Infra
 {
@@ -24,10 +25,10 @@ namespace RathalOS.Infra
 			_client = client;
 			//TODO: Register the commands as global commands instead of guild-specific
 			//TODO: Remove global command registration once added so it only runs once
-			SocketGuild testGuild = _client.Guilds.First();
+			SocketGuild testGuild = _client.Guilds.First(x => x.Id == 1311754186995666964);
 			//TODO: Grab the appropriate forum id when the bot first runs.
 			//In an ideal environment, this would be done via a setup command run by admins, but since this is a one-server bot, it really isn't worth the extra command
-			SocketForumChannel taskForum = testGuild.ForumChannels.First(x => x.Id == 1436980874032713838);
+			SocketForumChannel taskForum = testGuild.ForumChannels.First(x => x.Id == 1438718944922828871);
 			_validThread = taskForum.Id;
 			_client.ThreadCreated += _client_ThreadCreated;
 			_client.ThreadUpdated += _client_ThreadUpdated;
@@ -36,7 +37,8 @@ namespace RathalOS.Infra
 			_client.ThreadMemberLeft += _client_ThreadMemberLeft;
 			_client.SlashCommandExecuted += _client_SlashCommandExecuted;
 			_client.MessageReceived += _client_MessageReceived;
-			CreateCommands(testGuild);
+			//Uncomment to register commands
+			//CreateCommands(testGuild);
 			using (Wiki_DbContext ctxt = new())
 			{
 				_taskThreadIds.AddRange(ctxt.WikiTasks.Select(x => x.ChannelID));
@@ -44,7 +46,7 @@ namespace RathalOS.Infra
 			Owner = testGuild.Users.First(x => x.Username.ToUpper() == ConfigurationManager.AppSettings.Get("BotOwner")!.ToUpper());
 		}
 
-		private static void CreateCommands(SocketGuild guild)
+		private void CreateCommands(SocketGuild guild)
 		{
 			SlashCommandOptionBuilder taskOption = new SlashCommandOptionBuilder()
 				.WithName("task")
@@ -86,18 +88,24 @@ namespace RathalOS.Infra
 				new SlashCommandBuilder()
 					.WithName("delete")
 					.AddOption(taskOption)
-					.WithDescription("Deletes task without deleting the thread.."),
+					.WithDescription("Deletes task without deleting the thread."),
+				new SlashCommandBuilder()
+					.WithName("edit-description")
+					.AddOption(taskOption)
+					.AddOption("content", ApplicationCommandOptionType.String, "The content of the new description.", isRequired: true)
+					.WithDescription("Updates the description of the specified task."),
 				new SlashCommandBuilder()
 					.WithName("export")
-					.WithDescription("Exports all tasks, archived or otherwise, to an .xslx file.")
+					.WithDescription("Exports all tasks, archived or otherwise, to an .xlsx file.")
 			];
 			try
 			{
-				foreach (SlashCommandBuilder cmd in cmds)
+				IReadOnlyCollection<SocketApplicationCommand> installedCommands = _client.GetGlobalApplicationCommandsAsync().Result;
+				foreach (SlashCommandBuilder cmd in cmds.Where(x => !installedCommands.Any(y => y.Name == x.Name)))
 				{
-					guild.CreateApplicationCommandAsync(cmd.Build()).Wait();
+					_client.CreateGlobalApplicationCommandAsync(cmd.Build());
 				}
-				foreach (SocketApplicationCommand command in guild.GetApplicationCommandsAsync().Result.Where(x => !cmds.Any(y => y.Name == x.Name)))
+				foreach (SocketApplicationCommand command in installedCommands.Where(x => !cmds.Any(y => y.Name == x.Name)))
 				{
 					command.DeleteAsync().Wait();
 				}
@@ -215,6 +223,7 @@ namespace RathalOS.Infra
 					task.Title = parsedName;
 					anyChanges = true;
 				}
+				string[] originalTags = task.TagsCSV.Split(",");
 				if (!currentTags.SequenceEqual(task.TagsCSV.Split(",")))
 				{
 					task.TagsCSV = string.Join(",", currentTags);
@@ -257,6 +266,26 @@ namespace RathalOS.Infra
 					task.LastActive = DateTime.UtcNow;
 					await ctxt.SaveChangesAsync();
 				}
+				if (!currentTags.SequenceEqual(originalTags))
+				{
+					bool rolesTagged = false;
+					StringBuilder sb = new();
+					sb.AppendLine("A tag has been added to this task! The following role has been added due to their potential interest and/or assistance needed in this thread:");
+					string[] newTags = [..currentTags.Where(x => !originalTags.Contains(x))];
+					foreach (string tag in newTags)
+					{
+						SocketRole? role = arg2.Guild.Roles.FirstOrDefault(x => x.Name.Equals(tag, StringComparison.CurrentCultureIgnoreCase));
+						if (role != null)
+						{
+							sb.AppendLine(MentionUtils.MentionRole(role.Id));
+							rolesTagged = true;
+						}
+					}
+					if (rolesTagged)
+					{
+						await arg2.SendMessageAsync(sb.ToString());
+					}
+				}
 			}
 		}
 
@@ -292,6 +321,9 @@ namespace RathalOS.Infra
 					case "export":
 						await Commands.Export(arg);
 						break;
+					case "edit-description":
+						await Commands.EditDescription(arg);
+						break;
 				}
 			}
 			catch (Exception e)
@@ -308,26 +340,27 @@ namespace RathalOS.Infra
 
 		private Task _client_ThreadCreated(SocketThreadChannel arg)
 		{
-			if (arg.ParentChannel.ChannelType == ChannelType.Forum && arg.ParentChannel.Id == _validThread)
+			if (arg.ParentChannel.ChannelType == ChannelType.Forum && arg.ParentChannel.Id == _validThread && !_taskThreadIds.Contains(arg.Id))
 			{
 				lock (_lock)
 				{
-					IForumChannel chnl = (IForumChannel)arg.ParentChannel;
-					_taskThreadIds.Add(arg.Id);
 					using Wiki_DbContext ctxt = new();
-					WikiUser? user = ctxt.WikiUsers.FirstOrDefault(x => x.UserID == arg.Owner.Id);
-					if (user == null)
-					{
-						user = new WikiUser()
-						{
-							UserID = arg.Owner.Id,
-							Username = arg.Owner.Username
-						};
-						ctxt.WikiUsers.Add(user);
-						ctxt.SaveChanges();
-					}
 					if (!ctxt.WikiTasks.Any(x => x.ChannelID == arg.Id))
 					{
+						IForumChannel chnl = (IForumChannel)arg.ParentChannel;
+						_taskThreadIds.Add(arg.Id);
+						WikiUser? user = ctxt.WikiUsers.FirstOrDefault(x => x.UserID == arg.Owner.Id);
+						if (user == null)
+						{
+							user = new WikiUser()
+							{
+								UserID = arg.Owner.Id,
+								Username = arg.Owner.Username
+							};
+							ctxt.WikiUsers.Add(user);
+							ctxt.SaveChanges();
+						}
+						string[] tags = [.. chnl.Tags.Where(x => arg.AppliedTags.Contains(x.Id)).Select(x => x.Name)];
 						ctxt.WikiTasks.Add(new WikiTask()
 						{
 							Title = arg.Name,
@@ -337,13 +370,29 @@ namespace RathalOS.Infra
 							LastActive = DateTime.UtcNow,
 							Description = ((IMessage[])arg.GetMessagesAsync(1).FlattenAsync().Result).First().Content,
 							Creator = user,
-							TagsCSV = string.Join(",", chnl.Tags.Where(x => arg.AppliedTags.Contains(x.Id)).Select(x => x.Name)),
+							TagsCSV = string.Join(",", tags),
 							Assigned =
 							[
 								new AssignedTask() { Assignee = user }
 							]
 						});
 						ctxt.SaveChanges();
+						bool rolesTagged = false;
+						StringBuilder sb = new();
+						sb.AppendLine("A new task has been created! The following role(s) have been notified due to their potential interest and/or assistance needed in this thread:");
+						foreach (string tag in tags.Distinct())
+						{
+							SocketRole? role = arg.Guild.Roles.FirstOrDefault(x => x.Name.Equals(tag, StringComparison.CurrentCultureIgnoreCase));
+							if (role != null)
+							{
+								sb.AppendLine(MentionUtils.MentionRole(role.Id));
+								rolesTagged = true;
+							}
+						}
+						if (rolesTagged)
+						{
+							arg.SendMessageAsync(sb.ToString());
+						}
 					}
 				}
 			}

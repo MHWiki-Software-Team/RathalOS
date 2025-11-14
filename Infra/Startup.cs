@@ -35,7 +35,7 @@ namespace RathalOS.Infra
 				Console.WriteLine($"Connected to these servers as '{_client!.CurrentUser.Username}': ");
 				foreach (var guild in _client.Guilds)
 					Console.WriteLine($"- {guild.Name}");
-				await _client.SetGameAsync("The Guild authorizes you to hunt decK for sport.",
+				await _client.SetGameAsync("The Guild authorizes you to hunt that incomplete wiki article!",
 					type: ActivityType.CustomStatus);
 				Console.WriteLine($"Activity set to '{_client.Activity.Name}'");
 				_services!.GetRequiredService<InteractionEngine>().Initialize(_client);

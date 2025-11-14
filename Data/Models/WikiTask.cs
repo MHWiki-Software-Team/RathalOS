@@ -27,7 +27,7 @@ namespace RathalOS.Data.Models
 		{
 			get
 			{
-				return DateTime.UtcNow - LastActive > new TimeSpan(7, 0, 0, 0) && !TagsCSV.Contains("Discussion");
+				return DateTime.UtcNow - LastActive > new TimeSpan(7, 0, 0, 0) && !Completed && !TagsCSV.Contains("Discussion");
 			}
 		}
 		[NotMapped]
@@ -35,7 +35,7 @@ namespace RathalOS.Data.Models
 		{
 			get
 			{
-				return DateTime.UtcNow - LastUpdate > new TimeSpan(7, 0, 0, 0) && !Stale && !TagsCSV.Contains("Discussion");
+				return DateTime.UtcNow - LastUpdate > new TimeSpan(7, 0, 0, 0) && !Completed && !Stale && !TagsCSV.Contains("Discussion");
 			}
 		}
 	}

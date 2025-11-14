@@ -39,6 +39,24 @@ namespace RathalOS.Infra
 			}
 		}
 
+		public static async Task EditDescription(SocketSlashCommand arg)
+		{
+
+			using Wiki_DbContext ctxt = new();
+			long? taskId = (long?)arg.Data.Options?.FirstOrDefault(x => x.Name == "task")?.Value;
+			WikiTask? task = ctxt.WikiTasks.FirstOrDefault(x => taskId != null ? x.Id == taskId.Value : x.ChannelID == arg.ChannelId!.Value);
+			if (task != null)
+			{
+				task.Description = (string?)arg.Data.Options?.FirstOrDefault(x => x.Name == "content")?.Value ?? "";
+				await ctxt.SaveChangesAsync();
+				await arg.RespondAsync("Description updated!", ephemeral: true);
+			}
+			else
+			{
+				await arg.RespondAsync("The specified thread is not a valid forum thread, or no task exists!", ephemeral: true);
+			}
+		}
+
 		public static async Task View(SocketSlashCommand arg)
 		{
 			using Wiki_DbContext ctxt = new();
