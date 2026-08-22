@@ -22,7 +22,7 @@ namespace RathalOS.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("RathalOS.Data.AssignedTask", b =>
+            modelBuilder.Entity("RathalOS.Data.Models.AssignedTask", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -45,7 +45,190 @@ namespace RathalOS.Migrations
                     b.ToTable("AssignedTasks");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.WikiTask", b =>
+            modelBuilder.Entity("RathalOS.Data.Models.MHHCard", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CardDescription")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CardId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CardName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CardNameJP")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CardType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Decoration")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("Guid")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("HunterArmor")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("HunterWeapon")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("MHHOpenTradeId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MHHOpenTradeId1")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Power")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Rank")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Rarity")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("WikiUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MHHOpenTradeId");
+
+                    b.HasIndex("MHHOpenTradeId1");
+
+                    b.HasIndex("WikiUserId");
+
+                    b.ToTable("MHHCards");
+                });
+
+            modelBuilder.Entity("RathalOS.Data.Models.MHHCardStorage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CardNumber")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Decoration")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Series")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("StoredCard")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("MHHCardStorage");
+                });
+
+            modelBuilder.Entity("RathalOS.Data.Models.MHHEnvironmentVariables", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CurrentEvent")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CurrentSpecialEdition")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("LastHolo")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("LastRare")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("LastSpecial")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Monkeys")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TotalPulls")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("MHHEnvironmentVariables");
+                });
+
+            modelBuilder.Entity("RathalOS.Data.Models.MHHOpenTrade", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ExecutorId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("Expires")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsBuildingRecipientRequest")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("RecipientId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExecutorId");
+
+                    b.HasIndex("RecipientId");
+
+                    b.ToTable("MHHOpenTrades");
+                });
+
+            modelBuilder.Entity("RathalOS.Data.Models.ReleaseDates", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("HasNotified")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("ReleaseDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Tag")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ReleaseDates");
+                });
+
+            modelBuilder.Entity("RathalOS.Data.Models.WikiTask", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -99,7 +282,7 @@ namespace RathalOS.Migrations
                     b.ToTable("WikiTasks");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.WikiTaskUpdate", b =>
+            modelBuilder.Entity("RathalOS.Data.Models.WikiTaskUpdate", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -129,13 +312,40 @@ namespace RathalOS.Migrations
                     b.ToTable("WikiTaskUpdates");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.WikiUser", b =>
+            modelBuilder.Entity("RathalOS.Data.Models.WikiUser", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Boosters")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FavoriteCardJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("LastEditCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("LifetimeBoosters")
+                        .HasColumnType("int");
+
+                    b.Property<int>("LifetimePulls")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Pulls")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RecyclingBinJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TradeInventoryJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("UserID")
                         .HasColumnType("decimal(20,0)");
@@ -144,18 +354,25 @@ namespace RathalOS.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int?>("WikiUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("WikiUsername")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.HasKey("Id");
 
                     b.ToTable("WikiUsers");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.AssignedTask", b =>
+            modelBuilder.Entity("RathalOS.Data.Models.AssignedTask", b =>
                 {
-                    b.HasOne("RathalOS.Data.WikiUser", "Assignee")
+                    b.HasOne("RathalOS.Data.Models.WikiUser", "Assignee")
                         .WithMany("UserAssignments")
                         .HasForeignKey("AssigneeId");
 
-                    b.HasOne("RathalOS.Data.WikiTask", "Assignment")
+                    b.HasOne("RathalOS.Data.Models.WikiTask", "Assignment")
                         .WithMany("Assigned")
                         .HasForeignKey("AssignmentId");
 
@@ -164,9 +381,43 @@ namespace RathalOS.Migrations
                     b.Navigation("Assignment");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.WikiTask", b =>
+            modelBuilder.Entity("RathalOS.Data.Models.MHHCard", b =>
                 {
-                    b.HasOne("RathalOS.Data.WikiUser", "Creator")
+                    b.HasOne("RathalOS.Data.Models.MHHOpenTrade", null)
+                        .WithMany("ExecutorOffer")
+                        .HasForeignKey("MHHOpenTradeId");
+
+                    b.HasOne("RathalOS.Data.Models.MHHOpenTrade", null)
+                        .WithMany("RecipientRequest")
+                        .HasForeignKey("MHHOpenTradeId1");
+
+                    b.HasOne("RathalOS.Data.Models.WikiUser", null)
+                        .WithMany("Cards")
+                        .HasForeignKey("WikiUserId");
+                });
+
+            modelBuilder.Entity("RathalOS.Data.Models.MHHOpenTrade", b =>
+                {
+                    b.HasOne("RathalOS.Data.Models.WikiUser", "Executor")
+                        .WithMany()
+                        .HasForeignKey("ExecutorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RathalOS.Data.Models.WikiUser", "Recipient")
+                        .WithMany()
+                        .HasForeignKey("RecipientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Executor");
+
+                    b.Navigation("Recipient");
+                });
+
+            modelBuilder.Entity("RathalOS.Data.Models.WikiTask", b =>
+                {
+                    b.HasOne("RathalOS.Data.Models.WikiUser", "Creator")
                         .WithMany("CreatedTasks")
                         .HasForeignKey("CreatorId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -175,13 +426,13 @@ namespace RathalOS.Migrations
                     b.Navigation("Creator");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.WikiTaskUpdate", b =>
+            modelBuilder.Entity("RathalOS.Data.Models.WikiTaskUpdate", b =>
                 {
-                    b.HasOne("RathalOS.Data.WikiUser", "Creator")
+                    b.HasOne("RathalOS.Data.Models.WikiUser", "Creator")
                         .WithMany("Updates")
                         .HasForeignKey("CreatorId");
 
-                    b.HasOne("RathalOS.Data.WikiTask", "Task")
+                    b.HasOne("RathalOS.Data.Models.WikiTask", "Task")
                         .WithMany("Updates")
                         .HasForeignKey("TaskId");
 
@@ -190,15 +441,24 @@ namespace RathalOS.Migrations
                     b.Navigation("Task");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.WikiTask", b =>
+            modelBuilder.Entity("RathalOS.Data.Models.MHHOpenTrade", b =>
+                {
+                    b.Navigation("ExecutorOffer");
+
+                    b.Navigation("RecipientRequest");
+                });
+
+            modelBuilder.Entity("RathalOS.Data.Models.WikiTask", b =>
                 {
                     b.Navigation("Assigned");
 
                     b.Navigation("Updates");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.WikiUser", b =>
+            modelBuilder.Entity("RathalOS.Data.Models.WikiUser", b =>
                 {
+                    b.Navigation("Cards");
+
                     b.Navigation("CreatedTasks");
 
                     b.Navigation("Updates");

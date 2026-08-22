@@ -23,6 +23,22 @@ namespace RathalOS.Data.Models
 		public DateTime? CompletedOn { get; set; }
 		public bool OnHold { get; set; } = false;
 		[NotMapped]
+		public bool Recurring
+		{
+			get
+			{
+				return TagsCSV.Contains("Recurring");
+			}
+		}
+		[NotMapped]
+		public bool Upcoming
+		{
+			get
+			{
+				return TagsCSV.Contains("Upcoming");
+			}
+		}
+		[NotMapped]
 		public bool Stale
 		{
 			get
