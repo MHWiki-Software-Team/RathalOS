@@ -343,6 +343,16 @@ namespace RathalOS {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] mhhcdata2 {
+            get {
+                object obj = ResourceManager.GetObject("mhhcdata2", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] pullgif {
             get {
                 object obj = ResourceManager.GetObject("pullgif", resourceCulture);

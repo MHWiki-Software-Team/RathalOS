@@ -3,6 +3,7 @@ using Discord;
 using Discord.Interactions;
 using Discord.Rest;
 using Discord.WebSocket;
+using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -26,6 +27,7 @@ namespace RathalOS.Infra
 		public static Dictionary<ulong, ulong> CardUsers { get; set; } = [];
 		public static Dictionary<ulong, List<int>> OpenRecycles { get; set; } = [];
 		public static Dictionary<ulong, IUserMessage> RecycleMessages { get; set; } = [];
+		public static Dictionary<ulong, DateTime> MessageStoreTime { get; set; } = [];
 
 		public static async Task<WikiUser> GetUser(IUser discordUser, Wiki_DbContext? ctxt = null, bool addIfNotExists = true)
 		{
@@ -407,32 +409,6 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 			}
 		}
 
-		[SlashCommand("cash-in", "Redeem all edits accumulated on your Wiki account for card pulls (this will auto-run at noon daily).")]
-		public async Task CashIn()
-		{
-			await DeferAsync(ephemeral: true);
-			try
-			{
-				int addedEdits = 0;
-				int addedPulls = 0;
-				using (Wiki_DbContext ctxt = new())
-				{
-					WikiUser user = await GetUser(Context.User, ctxt);
-					addedPulls = user.Pulls;
-					addedEdits = user.LastEditCount < 0 ? 0 : user.LastEditCount;
-					await user.CashInPulls();
-					addedPulls = user.Pulls - addedPulls;
-					addedEdits = user.LastEditCount - addedEdits;
-					await ctxt.SaveChangesAsync();
-				}
-				await FollowupAsync($"You have redeemed {addedEdits} edits for {addedPulls} pulls!", ephemeral: true);
-			}
-			catch (Exception e)
-			{
-				Console.WriteLine($"[{DateTime.Now:MM/dd/yyyy hh:mm t}] - EXCEPTION - {JsonConvert.SerializeObject(e)}");
-			}
-		}
-
 		[SlashCommand("link-user", "Link your Discord account to your Wiki account if it was not done automatically. Case-sensitive.")]
 		public async Task LinkUser([Summary("username", "Your wiki username.")] string username)
 		{
@@ -601,6 +577,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 					CardListPagination.Add(msg.Id, new Tuple<int, List<MHHCard[]>>(0, cardSets));
 				}
 				CardUsers.Add(msg.Id, Context.User.Id);
+				MessageStoreTime.Add(msg.Id, DateTime.Now);
 			}
 			catch (Exception e)
 			{
@@ -829,6 +806,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 						}).Build(), ephemeral: false);
 					PaginationPages.Add(msg.Id, new Tuple<int, MHHCardPackage[]>(-1, pkgs));
 					CardUsers.Add(msg.Id, Context.User.Id);
+					MessageStoreTime.Add(msg.Id, DateTime.Now);
 				}
 			}
 			catch (Exception e)
@@ -962,6 +940,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 				builder.WithTextDisplay($"-# Page 1/{(cardSets.Count == 0 ? 1 : cardSets.Count)}");
 				IUserMessage msg = await FollowupAsync(components: builder.Build(), ephemeral: false);
 				CardListPagination.Add(msg.Id, new Tuple<int, List<MHHCard[]>>(0, cardSets));
+				MessageStoreTime.Add(msg.Id, DateTime.Now);
 			}
 			catch (Exception e)
 			{
@@ -1023,6 +1002,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 					}
 					IUserMessage msg = await FollowupWithFileAsync(attachment: new(stream, $"{card.CardId}.gif"), components: builder.Build(), ephemeral: false);
 					CardUsers.Add(msg.Id, Context.User.Id);
+					MessageStoreTime.Add(msg.Id, DateTime.Now);
 				}
 			}
 			catch (Exception e)
@@ -1102,6 +1082,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 					CardListPagination.Add(msg.Id, new Tuple<int, List<MHHCard[]>>(0, cardSets));
 				}
 				CardUsers.Add(msg.Id, Context.User.Id);
+				MessageStoreTime.Add(msg.Id, DateTime.Now);
 			}
 			catch (Exception e)
 			{
@@ -1226,9 +1207,6 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 				dbVar.LastSpecial = var.LastSpecial;
 				dbVar.Monkeys = var.Monkeys;
 				WikiUser dbUser = await ctxt.WikiUsers.Include(x => x.Cards).FirstAsync(x => x.Id == user.Id);
-#if DEBUG == false
-					dbUser.Pulls -= qty * (forceFoil ? 10 : 1);
-#endif
 				dbUser.LifetimePulls += 1;
 				dbUser.Cards ??= [];
 				int[] recycleIds = [];
@@ -1273,6 +1251,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 					}).Build(), ephemeral: false);
 				PaginationPages.Add(msg.Id, new Tuple<int, MHHCardPackage[]>(-1, [pkg]));
 				CardUsers.Add(msg.Id, arg.User.Id);
+				MessageStoreTime.Add(msg.Id, DateTime.Now);
 				RecycleMessages.Remove(arg.User.Id);
 				OpenRecycles.Remove(arg.User.Id);
 			}
@@ -1389,6 +1368,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 					CardListPagination.Add(msg.Id, new Tuple<int, List<MHHCard[]>>(0, cardSets));
 				}
 				CardUsers.Add(msg.Id, Context.User.Id);
+				MessageStoreTime.Add(msg.Id, DateTime.Now);
 				if (!OpenRecycles.TryAdd(Context.User.Id, []))
 				{
 					OpenRecycles[Context.User.Id] = [];
@@ -1507,6 +1487,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 					}).Build(), ephemeral: false);
 				PaginationPages.Add(msg.Id, new Tuple<int, MHHCardPackage[]>(-1, pkgs));
 				CardUsers.Add(msg.Id, Context.User.Id);
+				MessageStoreTime.Add(msg.Id, DateTime.Now);
 			}
 		}
 
@@ -1575,6 +1556,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 								new() { Style = ButtonStyle.Primary, CustomId = $"Dismiss", Emote = new Emoji("🔚"), Label = $"Close" }
 							}).Build(), ephemeral: false);
 						PaginationPages.Add(msg.Id, new Tuple<int, MHHCardPackage[]>(-1, [pkg]));
+						MessageStoreTime.Add(msg.Id, DateTime.Now);
 					}
 				}
 				if (qty > 1)

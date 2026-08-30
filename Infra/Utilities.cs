@@ -15,12 +15,14 @@ using RathalOS.Data.Context;
 using RathalOS.Data.Models;
 using SixLabors.ImageSharp;
 using System.Configuration;
+using System.Diagnostics;
 using System.Text;
 
 namespace RathalOS.Infra
 {
 	public class Utilities
 	{
+		public static string CardStoragePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Cards");
 		public static SocketForumChannel? Forum { get; set; }
 		public static IUser? Owner { get; set; }
 		public static List<AutocompleteResult> TaskResults { get => _taskResults; set => _taskResults = value; }
@@ -36,6 +38,7 @@ namespace RathalOS.Infra
 		private static InteractionService? _interactionService;
 		private static IScheduler? _scheduler;
 		private static IReadOnlyCollection<IApplicationCommand> _cmds = [];
+		private static ulong? _cmdId = null;
 
 		public static IGuildUser ToIGuildUser(IUser user)
 		{
@@ -97,6 +100,7 @@ namespace RathalOS.Infra
 				_client.ThreadMemberLeft += Client_ThreadMemberLeft;
 				_client.MessageReceived += Cient_MessageReceived;
 				_client.InteractionCreated += Client_InteractionCreated;
+				List<Task> allCards = new List<Task>();
 				using (Wiki_DbContext ctxt = new())
 				{
 					ctxt.Database.Migrate();
@@ -110,43 +114,68 @@ namespace RathalOS.Infra
 					}
 					TaskResults = [.. TaskResults.OrderBy(x => x.Name)];
 					//if you want the db overhead, you could always do this
-					//for (int series = 1; series <= 8; series++)
-					//{
-					//	int[] seriesCnts = [];
-					//	//starters have a weird border and no rarities
-					//	bool isBase = true;// _rand.Next(0, 2) == 0;
-					//	if (isBase)
-					//	{
-					//		seriesCnts = [90, 77, 77, 77, 90, 77, 75, 75];
-					//	}
-					//	else
-					//	{
-					//		seriesCnts = [17, 24, 22, 3, 27, 28, 24, 26];
-					//	}
-					//	List<MHHCardStorage> storageCardsForSeries = [];
-					//	for (int cardNumber = 1; cardNumber < seriesCnts[series - 1]; cardNumber++)
-					//	{
-					//		foreach (CardDeco deco in Enum.GetValues(typeof(CardDeco)))
-					//		{
-					//			if (!ctxt.MHHCardStorage.Any(x => x.Series == series && x.CardNumber == cardNumber && x.Decoration == deco))
-					//			{
-					//				MHHCardPackage pkg = await MHHCardPackage.BuildCardPackage(true, series, cardNumber, deco);
-					//				storageCardsForSeries.Add(new MHHCardStorage()
-					//				{
-					//					CardNumber = cardNumber,
-					//					Series = series,
-					//					Decoration = deco,
-					//					StoredCard = pkg.CardBytes
-					//				});
-					//			}
-					//		}
-					//	}
-					//	if (storageCardsForSeries.Count > 0)
-					//	{
-					//		ctxt.MHHCardStorage.AddRange(storageCardsForSeries);
-					//		ctxt.SaveChangesAsync();
-					//	}
-					//}
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+					Task.Run(async () =>
+					{
+						for (int series = 1; series <= 8; series++)
+						{
+							string seriesPath = Path.Combine(CardStoragePath, series.ToString());
+							if (!Directory.Exists(seriesPath))
+							{
+								Directory.CreateDirectory(seriesPath);
+							}
+							int[] seriesCnts = [];
+							//starters have a weird border and no rarities
+							bool isBase = true;// _rand.Next(0, 2) == 0;
+							if (isBase)
+							{
+								seriesCnts = [90, 77, 77, 77, 90, 77, 75, 75];
+							}
+							else
+							{
+								seriesCnts = [17, 24, 22, 3, 27, 28, 24, 26];
+							}
+							List<MHHCardStorage> storageCardsForSeries = [];
+							for (int cardNumber = 1; cardNumber <= seriesCnts[series - 1]; cardNumber++)
+							{
+								foreach (CardDeco deco in Enum.GetValues(typeof(CardDeco)))
+								{
+									//Database card storage for if the app is containerized (not recommended)
+									//if (!ctxt.MHHCardStorage.Any(x => x.Series == series && x.CardNumber == cardNumber && x.Decoration == deco))
+									//{
+									//	MHHCardPackage pkg = await MHHCardPackage.BuildCardPackage(true, series, cardNumber, deco);
+									//	storageCardsForSeries.Add(new MHHCardStorage()
+									//	{
+									//		CardNumber = cardNumber,
+									//		Series = series,
+									//		Decoration = deco,
+									//		StoredCard = pkg.CardBytes
+									//	});
+									//}
+									string? decoDesc = deco.GetDescription();
+									string cardPath = Path.Combine(seriesPath, cardNumber + "_" + decoDesc + ".json");
+									if (!File.Exists(cardPath))
+									{
+										MHHCardPackage pkg = await MHHCardPackage.BuildCardPackage(true, series, cardNumber, deco);
+										File.WriteAllText(cardPath, JsonConvert.SerializeObject(new MHHCardStorage()
+										{
+											CardNumber = cardNumber,
+											Series = series,
+											Decoration = deco,
+											StoredCard = pkg.CardBytes
+										}));
+										Console.WriteLine($"Wrote B{series:D2} {cardNumber}/{seriesCnts[series - 1]} - {decoDesc}");
+									}
+								}
+							}
+							//if (storageCardsForSeries.Count > 0)
+							//{
+							//	ctxt.MHHCardStorage.AddRange(storageCardsForSeries);
+							//	ctxt.SaveChangesAsync();
+							//}
+						}
+					});
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 				}
 				Owner = mainGuild.Users.First(x => x.Username.Equals(ConfigurationManager.AppSettings.Get("BotOwner"), StringComparison.CurrentCultureIgnoreCase));
 				StdSchedulerFactory factory = new();
@@ -164,6 +193,17 @@ namespace RathalOS.Infra
 						.RepeatForever())
 					.Build();
 				await _scheduler.ScheduleJob(dailyTasks, trigger);
+				IJobDetail hourlyTasks = JobBuilder.Create<HourlyTasksJob>()
+					.WithIdentity("hourlyTasks")
+					.Build();
+				//Every hour
+				ITrigger trigger2 = TriggerBuilder.Create()
+					.WithIdentity("trigger2")
+					.WithSimpleSchedule(x => x
+						.WithIntervalInHours(1)
+						.RepeatForever())
+					.Build();
+				await _scheduler.ScheduleJob(hourlyTasks, trigger2);
 				LogProvider.SetCurrentLogProvider(new ConsoleLogProvider());
 				_cmds = await mainGuild.GetApplicationCommandsAsync();
 				MHHEnvironmentVariables dbVars = await Wiki_DbContext.GetEnvironmentVariables();
@@ -193,6 +233,14 @@ namespace RathalOS.Infra
 						{
 							case string btnId when btnId.StartsWith("DismissTrade"):
 								{
+									if (InteractionEngine.PaginationPages.ContainsKey(component.Message.Id))
+									{
+										InteractionEngine.PaginationPages.Remove(component.Message.Id);
+									}
+									if (InteractionEngine.CardListPagination.ContainsKey(component.Message.Id))
+									{
+										InteractionEngine.CardListPagination.Remove(component.Message.Id);
+									}
 									await component.Message.DeleteAsync();
 									int tradeId = Convert.ToInt32(btnId.Replace("DismissTradeID-", ""));
 									using (Wiki_DbContext ctxt = new())
@@ -205,6 +253,14 @@ namespace RathalOS.Infra
 							case "Dismiss":
 								try
 								{
+									if (InteractionEngine.PaginationPages.ContainsKey(component.Message.Id))
+									{
+										InteractionEngine.PaginationPages.Remove(component.Message.Id);
+									}
+									if (InteractionEngine.CardListPagination.ContainsKey(component.Message.Id))
+									{
+										InteractionEngine.CardListPagination.Remove(component.Message.Id);
+									}
 									await component.Message.DeleteAsync();
 								}
 								catch (HttpException e)
@@ -318,8 +374,9 @@ namespace RathalOS.Infra
 										}
 									}
 									builder.WithTextDisplay($"-# Page 1/{(cardSets.Count == 0 ? 1 : cardSets.Count)}");
-									IUserMessage msg = await arg.FollowupAsync(components: builder.Build(), ephemeral: false);
+									RestFollowupMessage msg = await arg.FollowupAsync(components: builder.Build(), ephemeral: false);
 									InteractionEngine.CardListPagination.Add(msg.Id, new Tuple<int, List<MHHCard[]>>(0, cardSets));
+									InteractionEngine.MessageStoreTime.Add(msg.Id, DateTime.Now);
 								}
 								break;
 							case string btnId when btnId.StartsWith("AcceptTrade"):
@@ -541,6 +598,7 @@ namespace RathalOS.Infra
 											InteractionEngine.CardListPagination.Add(msg.Id, new Tuple<int, List<MHHCard[]>>(0, cardSets));
 										}
 										InteractionEngine.CardUsers.Add(msg.Id, arg.User.Id);
+										InteractionEngine.MessageStoreTime.Add(msg.Id, DateTime.Now);
 									}
 									catch (Exception e)
 									{
@@ -711,6 +769,7 @@ namespace RathalOS.Infra
 													InteractionEngine.CardListPagination.Add(msg.Id, new Tuple<int, List<MHHCard[]>>(0, cardSets));
 												}
 												InteractionEngine.CardUsers.Add(msg.Id, arg.User.Id);
+												InteractionEngine.MessageStoreTime.Add(msg.Id, DateTime.Now);
 											}
 										}
 										catch (Exception e)
@@ -930,7 +989,7 @@ namespace RathalOS.Infra
 										{
 											string deco = card.Decoration == CardDeco.Normal ? "" : " - " + card.Decoration.GetDescription();
 											string title = $"{card.CardName}{deco}";
-											ulong cmdId = _cmds.First(x => x.Name == "mhhc-info").Id;
+											_cmdId ??= _cmds.First(x => x.Name == "mhhc-info").Id;
 											RestFollowupMessage msg = await arg.FollowupWithFileAsync(attachment: new(stream, $"{card.CardId}.png"), components: new ComponentBuilderV2()
 												.WithTextDisplay($"## {title}")
 												.WithMediaGallery([new MediaGalleryItemProperties()
@@ -939,12 +998,13 @@ namespace RathalOS.Infra
 													Media = new UnfurledMediaItemProperties($"attachment://{card.CardId}.png")
 												}])
 												.WithTextDisplay($"**Name**: {card.CardName}\r\n**ID**: {card.CardId}\r\n**Rarity**: {card.Rarity}\r\n**Decoration**: {card.Decoration.GetDescription()}")
-												.WithTextDisplay($"-# Scans by Grender; TL by Mir, Yuwika, and MandL27. </mhhc-info:{cmdId}> for their links!")
+												.WithTextDisplay($"-# Scans by Grender; TL by Mir, Yuwika, and MandL27. </mhhc-info:{_cmdId}> for their links!")
 												.WithActionRow([
 													new ButtonBuilder() { CustomId = $"{(!hasCard ? "Add" : "Remove")}RecycleCardCommandID-{card.Id}", Label = !hasCard ? "Add to Recycle Pile" : "Remove from Recycle Pile", Emote = new Emoji("🔃"), Style = ButtonStyle.Primary },
 													new ButtonBuilder() { Style = ButtonStyle.Primary, CustomId = $"Dismiss", Emote = new Emoji("🔚"), Label = $"Close" }
 												]).Build(), ephemeral: false);
 											InteractionEngine.CardUsers.Add(msg.Id, arg.User.Id);
+											InteractionEngine.MessageStoreTime.Add(msg.Id, DateTime.Now);
 										}
 									}
 									catch (Exception e)
@@ -989,7 +1049,7 @@ namespace RathalOS.Infra
 											{
 												string deco = card.Decoration == CardDeco.Normal ? "" : " - " + card.Decoration.GetDescription();
 												string title = $"{card.CardName}{deco}";
-												ulong cmdId = _cmds.First(x => x.Name == "mhhc-info").Id;
+												_cmdId ??= _cmds.First(x => x.Name == "mhhc-info").Id;
 												RestFollowupMessage msg = await arg.FollowupWithFileAsync(attachment: new(stream, $"{card.CardId}.png"), components: new ComponentBuilderV2()
 													.WithTextDisplay($"## {title}")
 													.WithMediaGallery([new MediaGalleryItemProperties()
@@ -998,13 +1058,14 @@ namespace RathalOS.Infra
 														Media = new UnfurledMediaItemProperties($"attachment://{card.CardId}.png")
 													}])
 													.WithTextDisplay($"**Name**: {card.CardName}\r\n**ID**: {card.CardId}\r\n**Rarity**: {card.Rarity}\r\n**Decoration**: {card.Decoration.GetDescription()}")
-													.WithTextDisplay($"-# Scans by Grender; TL by Mir, Yuwika, and MandL27. </mhhc-info:{cmdId}> for their links!")
+													.WithTextDisplay($"-# Scans by Grender; TL by Mir, Yuwika, and MandL27. </mhhc-info:{_cmdId}> for their links!")
 													.WithActionRow([
 														new ButtonBuilder() { CustomId = $"{(!hasCard ? "Add" : "Remove")}TradeCardCommandID-{JsonConvert.SerializeObject(new { TradeId = trade.Id, CardId = card.Id })}", Label = !hasCard ? "Add to Trade" : "Remove from Trade", Emote = new Emoji("🔃"), Style = ButtonStyle.Primary },
 														new ButtonBuilder() { Style = ButtonStyle.Primary, CustomId = $"RemoveTradeCardID-{card.Id}", Emote = new Emoji("📉"), Label = "Remove from Trade List" },
 													new ButtonBuilder() { Style = ButtonStyle.Primary, CustomId = $"Dismiss", Emote = new Emoji("🔚"), Label = $"Close" }
 													]).Build(), ephemeral: false);
 												InteractionEngine.CardUsers.Add(msg.Id, arg.User.Id);
+												InteractionEngine.MessageStoreTime.Add(msg.Id, DateTime.Now);
 											}
 										}
 										catch (Exception e)
@@ -1017,7 +1078,8 @@ namespace RathalOS.Infra
 							case string btnId when btnId.StartsWith("FireCardCommand"):
 								{
 									int id = Convert.ToInt32(btnId[(btnId.IndexOf('-') + 1)..]);
-									await arg.DeferAsync();
+									arg.DeferAsync();
+									var infoMsg = await arg.FollowupAsync("Fetching card...", ephemeral: true);
 									try
 									{
 										MHHCard? card = null;
@@ -1032,7 +1094,7 @@ namespace RathalOS.Infra
 											if (isUsersCard)
 											{
 												WikiUser user = await ctxt.WikiUsers.Include(x => x.Cards).FirstAsync(x => arg.User.Id == x.UserID);
-												isFavorite = !string.IsNullOrEmpty(user.FavoriteCardJson) && user.FavoriteCardJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.FavoriteCardJson)!.Any(x => x.Value<int>() == card.Id);
+												isFavorite = !string.IsNullOrEmpty(user.FavoriteCardJson) && user.FavoriteCardJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.FavoriteCardJson)!.Any(x => x.Value<int>() == id);
 												isTrading = !string.IsNullOrEmpty(user.TradeInventoryJson) && user.TradeInventoryJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.TradeInventoryJson)!.Any(x => x.Value<int>() == id);
 												isRecycling = !string.IsNullOrEmpty(user.RecyclingBinJson) && user.RecyclingBinJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.RecyclingBinJson)!.Any(x => x.Value<int>() == id);
 											}
@@ -1047,7 +1109,7 @@ namespace RathalOS.Infra
 										{
 											string deco = card.Decoration == CardDeco.Normal ? "" : " - " + card.Decoration.GetDescription();
 											string title = $"{card.CardName}{deco}";
-											ulong cmdId = _cmds.First(x => x.Name == "mhhc-info").Id;
+											_cmdId ??= _cmds.First(x => x.Name == "mhhc-info").Id;
 											ComponentBuilderV2 builder = new ComponentBuilderV2()
 												.WithTextDisplay($"## {title}")
 												.WithMediaGallery([new MediaGalleryItemProperties()
@@ -1056,7 +1118,7 @@ namespace RathalOS.Infra
 													Media = new UnfurledMediaItemProperties($"attachment://{card.CardId}.png")
 												}])
 												.WithTextDisplay($"**Name**: {card.CardName}\r\n**JP Name**: {card.CardNameJP}\r\n**ID**: {card.CardId}\r\n**Type**: {card.CardType}\r\n**Rarity**: {card.Rarity}\r\n**Decoration**: {card.Decoration.GetDescription()}\r\n**Description**: {card.CardDescription}")
-												.WithTextDisplay($"-# Scans by Grender; TL by Mir, Yuwika, and MandL27. </mhhc-info:{cmdId}> for their links!");
+												.WithTextDisplay($"-# Scans by Grender; TL by Mir, Yuwika, and MandL27. </mhhc-info:{_cmdId}> for their links!");
 											if (isUsersCard)
 											{
 												builder = builder.WithActionRow([
@@ -1073,7 +1135,9 @@ namespace RathalOS.Infra
 												]);
 											}
 											RestFollowupMessage msg = await arg.FollowupWithFileAsync(attachment: new(stream, $"{card.CardId}.png"), components: builder.Build(), ephemeral: false);
+											infoMsg.DeleteAsync();
 											InteractionEngine.CardUsers.Add(msg.Id, arg.User.Id);
+											InteractionEngine.MessageStoreTime.Add(msg.Id, DateTime.Now);
 										}
 									}
 									catch (Exception e)
@@ -1329,11 +1393,11 @@ namespace RathalOS.Infra
 												buttons =
 												[
 													new() {
-												CustomId = "NextCardButton",
-												Emote = new Emoji("➡️"),
-												Label = "Next",
-												Style = ButtonStyle.Primary
-											}
+														CustomId = "NextCardButton",
+														Emote = new Emoji("➡️"),
+														Label = "Next",
+														Style = ButtonStyle.Primary
+													}
 												];
 											}
 											else if (index == pages.Item2.Length - 1)
@@ -1341,31 +1405,31 @@ namespace RathalOS.Infra
 												buttons =
 												[
 													new()
-											{
-												CustomId = "PreviousCardButton",
-												Emote = new Emoji("⬅️"),
-												Label = "Previous",
-												Style = ButtonStyle.Primary
-											}
+													{
+														CustomId = "PreviousCardButton",
+														Emote = new Emoji("⬅️"),
+														Label = "Previous",
+														Style = ButtonStyle.Primary
+													}
 												];
 											}
 											else
 											{
 												buttons =
 												[
-												new()
-											{
-												CustomId = "PreviousCardButton",
-												Emote = new Emoji("⬅️"),
-												Label = "Previous",
-												Style = ButtonStyle.Primary
-											},
-												new() {
-												CustomId = "NextCardButton",
-												Emote = new Emoji("➡️"),
-												Label = "Next",
-												Style = ButtonStyle.Primary
-											}
+													new()
+													{
+														CustomId = "PreviousCardButton",
+														Emote = new Emoji("⬅️"),
+														Label = "Previous",
+														Style = ButtonStyle.Primary
+													},
+													new() {
+														CustomId = "NextCardButton",
+														Emote = new Emoji("➡️"),
+														Label = "Next",
+														Style = ButtonStyle.Primary
+													}
 												];
 											}
 										}
@@ -1377,15 +1441,18 @@ namespace RathalOS.Infra
 										bool isRecycling = false;
 										using (Wiki_DbContext ctxt = new())
 										{
-											MHHCard dbCard = await ctxt.MHHCards.FirstAsync(x => x.Guid == card.Guid);
-											card.Id = dbCard.Id;
-											WikiUser? user = await ctxt.WikiUsers.FirstOrDefaultAsync(x => x.UserID == arg.User.Id && x.Cards != null && x.Cards.Any(y => y.Id == card.Id));
-											isUsersCard = user != null;
-											if (user != null)
+											MHHCard? dbCard = await ctxt.MHHCards.FirstOrDefaultAsync(x => x.Guid == card.Guid);
+											if (dbCard != null)
 											{
-												isFavorite = !string.IsNullOrEmpty(user.FavoriteCardJson) && user.FavoriteCardJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.FavoriteCardJson)!.Any(x => x.Value<int>() == card.Id);
-												isTrading = !string.IsNullOrEmpty(user.TradeInventoryJson) && user.TradeInventoryJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.TradeInventoryJson)!.Any(x => x.Value<int>() == card.Id);
-												isRecycling = !string.IsNullOrEmpty(user.RecyclingBinJson) && user.RecyclingBinJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.RecyclingBinJson)!.Any(x => x.Value<int>() == card.Id);
+												card.Id = dbCard.Id;
+												WikiUser? user = await ctxt.WikiUsers.FirstOrDefaultAsync(x => x.UserID == arg.User.Id && x.Cards != null && x.Cards.Any(y => y.Id == card.Id));
+												isUsersCard = user != null;
+												if (user != null)
+												{
+													isFavorite = !string.IsNullOrEmpty(user.FavoriteCardJson) && user.FavoriteCardJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.FavoriteCardJson)!.Any(x => x.Value<int>() == card.Id);
+													isTrading = !string.IsNullOrEmpty(user.TradeInventoryJson) && user.TradeInventoryJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.TradeInventoryJson)!.Any(x => x.Value<int>() == card.Id);
+													isRecycling = !string.IsNullOrEmpty(user.RecyclingBinJson) && user.RecyclingBinJson != "[]" && JsonConvert.DeserializeObject<JArray>(user.RecyclingBinJson)!.Any(x => x.Value<int>() == card.Id);
+												}
 											}
 										}
 										using (MemoryStream stream = new(pages.Item2[index].CardBytes))
@@ -1394,7 +1461,7 @@ namespace RathalOS.Infra
 											string title = $"{card.CardName}{deco}";
 											await component.UpdateAsync(x =>
 											{
-												ulong cmdId = _cmds.First(x => x.Name == "mhhc-info").Id;
+												_cmdId ??= _cmds.First(x => x.Name == "mhhc-info").Id;
 												x.Flags = MessageFlags.ComponentsV2;
 												x.Attachments = new FileAttachment[] { new(stream, $"{card.CardId}.png") };
 												ComponentBuilderV2 builder = new ComponentBuilderV2()
@@ -1407,7 +1474,7 @@ namespace RathalOS.Infra
 															Media = new UnfurledMediaItemProperties($"attachment://{card.CardId}.png")
 														}))
 													.WithTextDisplay($"**Name**: {card.CardName}\r\n**JP Name**: {card.CardNameJP}\r\n**ID**: {card.CardId}\r\n**Type**: {card.CardType}\r\n**Rarity**: {card.Rarity}\r\n**Decoration**: {card.Decoration.GetDescription()}\r\n**Description**: {card.CardDescription}")
-													.WithTextDisplay($"-# Scans by Grender; TL by Mir, Yuwika, and MandL27. </mhhc-info:{cmdId}> for their links!");
+													.WithTextDisplay($"-# Scans by Grender; TL by Mir, Yuwika, and MandL27. </mhhc-info:{_cmdId}> for their links!");
 												if (isUsersCard)
 												{
 													builder = builder.WithActionRow([

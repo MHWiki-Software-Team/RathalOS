@@ -1,4 +1,5 @@
-﻿using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
+﻿using DocumentFormat.OpenXml.Bibliography;
+using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json;
@@ -681,7 +682,7 @@ namespace RathalOS.Data.Models
 				{ "B08-74", "Common" },
 				{ "B08-75", "Uncommon" }
 			};
-		private static readonly List<string[]> _translated = [.. Encoding.UTF8.GetString(CardResources.mhhcdata)!.Split("\r\n").Select(x => x.Split("\t"))];
+		private static readonly List<string[]> _translated = [.. Encoding.UTF8.GetString(CardResources.mhhcdata2)!.Split("\r\n").Select(x => x.Split("\t"))];
 		private static readonly IMemoryCache _cache = Utilities.GetService<IMemoryCache>();
 
 		public static void TryAddCardToCache(Guid cardGuid, MHHCardPackage package)
@@ -806,7 +807,7 @@ namespace RathalOS.Data.Models
 
 		public static async Task<MHHCardPackage> BuildCardPackage(MHHCard card)
 		{
-			int[] ids = [..card.CardId.Split("-").Select(x => Convert.ToInt32(x.Replace("B0", "")))];
+			int[] ids = [.. card.CardId.Split("-").Select(x => Convert.ToInt32(x.Replace("B0", "")))];
 			return await BuildCardPackage(true, ids[0], ids[1], card.Decoration, card.Guid);
 		}
 
@@ -852,91 +853,103 @@ namespace RathalOS.Data.Models
 				}
 				if (ret == null)
 				{
-					ret ??= new();
 					string cardId = $"B{series:00}-{cardNo:00}";
 					CardRarity cardRarity = RarityFromString(_cardMaps[cardId]);
 					int mult = 1;
 					bool forceRare = boosterRarity != null && ((boosterRarity == BoosterRarity.Uncommon && cardRarity == CardRarity.Common) || (boosterRarity == BoosterRarity.Foil && cardRarity == CardRarity.Rare));
 					cardDeco ??= boosterRarity == BoosterRarity.Common ? CardDeco.Normal : await RollDeco(mult, forceRare: forceRare);
-					MemoryStream finalStream = new();
 					byte[]? srcCardBytes = null;
-					using (Wiki_DbContext ctxt = new())
+					string cardPath = Path.Combine(Utilities.CardStoragePath, series.ToString(), cardNo + "_" + cardDeco.GetDescription() + ".json");
+					if (File.Exists(cardPath))
 					{
-						MHHCardStorage? storedCard = await ctxt.MHHCardStorage.FirstOrDefaultAsync(x => x.Series == series && x.CardNumber == cardNo && x.Decoration == cardDeco);
-						srcCardBytes = storedCard?.StoredCard;
-						if (srcCardBytes != null)
-						{
-							finalStream = new(srcCardBytes!);
-						}
+						srcCardBytes = JsonConvert.DeserializeObject<MHHCardStorage>(File.ReadAllText(cardPath))!.StoredCard;
 					}
-					if (srcCardBytes == null)
+					else
 					{
-						string cardUri = $"https://raw.githubusercontent.com/GrenderG/MHHC_Archive/94f6feca23fd88ce90418168e36d591c5e174b31/Card%20Scans/{(isBaseCard ? "Base" : "Starter")}%20{series:00}/{(isBaseCard ? "B" : "S")}{series:00}-{cardNo:00}.png";
-						if (!_cache.TryGetValue(cardUri, out srcCardBytes))
+						using (MemoryStream finalStream = new())
 						{
-							using (HttpClient client = new())
+							//Outdated database storage
+							//using (Wiki_DbContext ctxt = new())
+							//{
+							//	MHHCardStorage? storedCard = await ctxt.MHHCardStorage.FirstOrDefaultAsync(x => x.Series == series && x.CardNumber == cardNo && x.Decoration == cardDeco);
+							//	srcCardBytes = storedCard?.StoredCard;
+							//	if (srcCardBytes != null)
+							//	{
+							//		finalStream = new(srcCardBytes!);
+							//	}
+							//}
+							if (srcCardBytes == null)
 							{
-								HttpResponseMessage response = await client.GetAsync(cardUri);
-								srcCardBytes = await response.Content.ReadAsByteArrayAsync();
-								ICacheEntry entry = _cache.CreateEntry(cardUri);
-								entry.AbsoluteExpirationRelativeToNow = new TimeSpan(24, 0, 0);
-								entry.Value = srcCardBytes;
+								string cardUri = $"https://raw.githubusercontent.com/GrenderG/MHHC_Archive/94f6feca23fd88ce90418168e36d591c5e174b31/Card%20Scans/{(isBaseCard ? "Base" : "Starter")}%20{series:00}/{(isBaseCard ? "B" : "S")}{series:00}-{cardNo:00}.png";
+								if (!_cache.TryGetValue(cardUri, out srcCardBytes))
+								{
+									using (HttpClient client = new())
+									{
+										HttpResponseMessage response = await client.GetAsync(cardUri);
+										srcCardBytes = await response.Content.ReadAsByteArrayAsync();
+										ICacheEntry entry = _cache.CreateEntry(cardUri);
+										entry.AbsoluteExpirationRelativeToNow = new TimeSpan(24, 0, 0);
+										entry.Value = srcCardBytes;
+									}
+								}
+								byte[] newBytes = [];
+								using (MemoryStream ms = new(srcCardBytes!))
+								using (Image baseImage = Image.Load(ms))
+								{
+									baseImage.Mutate(x => x.Resize(2858, 4086));
+									baseImage.Mutate(x =>
+										x.ApplyCardEffects(cardDeco.Value, baseImage, _rand)
+										.EntropyCrop()
+										.RoundCorners(100)
+										.Resize(new ResizeOptions
+										{
+											Size = new Size(x.GetCurrentSize().Width - 10, x.GetCurrentSize().Height - 10),
+											Mode = ResizeMode.Crop
+										})
+										.Resize(baseImage.Width / 2, baseImage.Height / 2)
+									);
+									baseImage.SaveAsPng(finalStream);
+									newBytes = finalStream.ToArray();
+								}
+								srcCardBytes = newBytes;
 							}
 						}
-						byte[] newBytes = [];
-						using (MemoryStream ms = new(srcCardBytes!))
-						using (Image baseImage = Image.Load(ms))
-						{
-							baseImage.Mutate(x => x.Resize(2858, 4086));
-							baseImage.Mutate(x =>
-								x.ApplyCardEffects(cardDeco.Value, baseImage, _rand)
-								.EntropyCrop()
-								.RoundCorners(100)
-								.Resize(new ResizeOptions
-								{
-									Size = new Size(x.GetCurrentSize().Width - 10, x.GetCurrentSize().Height - 10),
-									Mode = ResizeMode.Crop
-								})
-								.Resize(baseImage.Width / 2, baseImage.Height / 2)
-							);
-							baseImage.SaveAsPng(finalStream);
-							newBytes = finalStream.ToArray();
-						}
-						srcCardBytes = newBytes;
 					}
 					string deco = cardDeco.Value == CardDeco.Normal ? "" : " - " + cardDeco.Value.GetDescription();
 					string[] row = _translated.First(x => x[0] == series.ToString() && x[2] == cardNo.ToString());
-					ret.Card = new()
+					ret = new MHHCardPackage()
 					{
-						Guid = cardGuid!.Value,
-						CardName = row[5].Replace("{{{LINEBREAK}}}", "\r\n"),
-						CardNameJP = row[4].Replace("{{{LINEBREAK}}}", "\r\n"),
-						CardType = row[3].Replace("{{{LINEBREAK}}}", "\r\n"),
-						CardDescription = row[22].Replace("{{{LINEBREAK}}}", "\r\n"),
-						CardId = cardId,
-						Power = row[6].Replace("{{{LINEBREAK}}}", "\r\n"),
-						Rank = row[7].Replace("{{{LINEBREAK}}}", "\r\n"),
-						HunterWeapon = row[8].Replace("{{{LINEBREAK}}}", "\r\n"),
-						HunterArmor = row[19].Replace("{{{LINEBREAK}}}", "\r\n"),
-						Rarity = cardRarity,
-						Decoration = cardDeco.Value,
-					};
-					ret.CardBytes = srcCardBytes!;
-					using (Wiki_DbContext ctxt = new())
-					{
-						if (!ctxt.MHHCardStorage.Any(x => x.Series == series && x.CardNumber == cardNo && x.Decoration == cardDeco!))
+						Card = new()
 						{
-							await ctxt.MHHCardStorage.AddAsync(new()
-							{
-								CardNumber = cardNo,
-								Decoration = cardDeco.Value,
-								Series = series,
-								StoredCard = srcCardBytes!
-							});
-							await ctxt.SaveChangesAsync();
-						}
-					}
-					finalStream.Dispose();
+							Guid = cardGuid!.Value,
+							CardName = row[5].Replace("{{{LINEBREAK}}}", "\r\n"),
+							CardNameJP = row[4].Replace("{{{LINEBREAK}}}", "\r\n"),
+							CardType = row[3].Replace("{{{LINEBREAK}}}", "\r\n"),
+							CardDescription = row[22].Replace("{{{LINEBREAK}}}", "\r\n").Replace("\"", ""),
+							CardId = cardId,
+							Power = row[6].Replace("{{{LINEBREAK}}}", "\r\n"),
+							Rank = row[7].Replace("{{{LINEBREAK}}}", "\r\n"),
+							HunterWeapon = row[8].Replace("{{{LINEBREAK}}}", "\r\n"),
+							HunterArmor = row[19].Replace("{{{LINEBREAK}}}", "\r\n"),
+							Rarity = cardRarity,
+							Decoration = cardDeco.Value
+						},
+						CardBytes = srcCardBytes
+					};
+					//using (Wiki_DbContext ctxt = new())
+					//{
+					//if (!ctxt.MHHCardStorage.Any(x => x.Series == series && x.CardNumber == cardNo && x.Decoration == cardDeco!))
+					//{
+					//	await ctxt.MHHCardStorage.AddAsync(new()
+					//	{
+					//		CardNumber = cardNo,
+					//		Decoration = cardDeco.Value,
+					//		Series = series,
+					//		StoredCard = srcCardBytes!
+					//	});
+					//	await ctxt.SaveChangesAsync();
+					//}
+					//}
 				}
 			}
 			catch (Exception e)
