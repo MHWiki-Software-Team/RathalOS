@@ -16,14 +16,7 @@ namespace RathalOS.Data.Context
 
 		protected override void OnModelCreating(ModelBuilder modelBuilder)
 		{
-			modelBuilder.Entity<WikiTask>().HasOne(x => x.Creator);
-			modelBuilder.Entity<WikiUser>().HasMany(x => x.UserAssignments);
 			modelBuilder.Entity<WikiUser>().HasMany(x => x.Cards);
-			modelBuilder.Entity<WikiTask>().HasMany(x => x.Assigned);
-			modelBuilder.Entity<WikiUser>().HasMany(x => x.CreatedTasks)
-				.WithOne(x => x.Creator);
-			modelBuilder.Entity<WikiTask>().HasMany(x => x.Updates)
-				.WithOne(x => x.Task);
 			base.OnModelCreating(modelBuilder);
 		}
 
@@ -33,12 +26,7 @@ namespace RathalOS.Data.Context
 			optionsBuilder.UseSqlServer(ConfigurationManager.AppSettings.Get("DBConnString"));
 			base.OnConfiguring(optionsBuilder);
 		}
-
-		public DbSet<ReleaseDates> ReleaseDates { get; set; }
-		public DbSet<AssignedTask> AssignedTasks { get; set; }
-		public DbSet<WikiTask> WikiTasks { get; set; }
 		public DbSet<WikiUser> WikiUsers { get; set; }
-		public DbSet<WikiTaskUpdate> WikiTaskUpdates { get; set; }
 		public DbSet<MHHCard> MHHCards { get; set; }
 		public DbSet<MHHCardStorage> MHHCardStorage { get; set; }
 		public DbSet<MHHOpenTrade> MHHOpenTrades { get; set; }

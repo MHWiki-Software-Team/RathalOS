@@ -22,29 +22,6 @@ namespace RathalOS.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("RathalOS.Data.Models.AssignedTask", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("AssigneeId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("AssignmentId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssigneeId");
-
-                    b.HasIndex("AssignmentId");
-
-                    b.ToTable("AssignedTasks");
-                });
-
             modelBuilder.Entity("RathalOS.Data.Models.MHHCard", b =>
                 {
                     b.Property<int>("Id")
@@ -205,113 +182,6 @@ namespace RathalOS.Migrations
                     b.ToTable("MHHOpenTrades");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.Models.ReleaseDates", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("HasNotified")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime>("ReleaseDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Tag")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ReleaseDates");
-                });
-
-            modelBuilder.Entity("RathalOS.Data.Models.WikiTask", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Archived")
-                        .HasColumnType("bit");
-
-                    b.Property<decimal>("ChannelID")
-                        .HasColumnType("decimal(20,0)");
-
-                    b.Property<bool>("Completed")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime?>("CompletedOn")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("CreatorId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("LastActive")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("LastUpdate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("OnHold")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("TagsCSV")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("TimeStamp")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatorId");
-
-                    b.ToTable("WikiTasks");
-                });
-
-            modelBuilder.Entity("RathalOS.Data.Models.WikiTaskUpdate", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("CreatorId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("TaskId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("TimeStamp")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Update")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatorId");
-
-                    b.HasIndex("TaskId");
-
-                    b.ToTable("WikiTaskUpdates");
-                });
-
             modelBuilder.Entity("RathalOS.Data.Models.WikiUser", b =>
                 {
                     b.Property<int>("Id")
@@ -327,8 +197,11 @@ namespace RathalOS.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("LastEditCount")
+                    b.Property<int>("GrantPulls")
                         .HasColumnType("int");
+
+                    b.Property<DateTime>("LastActiveCheck")
+                        .HasColumnType("datetime2");
 
                     b.Property<int>("LifetimeBoosters")
                         .HasColumnType("int");
@@ -366,21 +239,6 @@ namespace RathalOS.Migrations
                     b.ToTable("WikiUsers");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.Models.AssignedTask", b =>
-                {
-                    b.HasOne("RathalOS.Data.Models.WikiUser", "Assignee")
-                        .WithMany("UserAssignments")
-                        .HasForeignKey("AssigneeId");
-
-                    b.HasOne("RathalOS.Data.Models.WikiTask", "Assignment")
-                        .WithMany("Assigned")
-                        .HasForeignKey("AssignmentId");
-
-                    b.Navigation("Assignee");
-
-                    b.Navigation("Assignment");
-                });
-
             modelBuilder.Entity("RathalOS.Data.Models.MHHCard", b =>
                 {
                     b.HasOne("RathalOS.Data.Models.MHHOpenTrade", null)
@@ -415,32 +273,6 @@ namespace RathalOS.Migrations
                     b.Navigation("Recipient");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.Models.WikiTask", b =>
-                {
-                    b.HasOne("RathalOS.Data.Models.WikiUser", "Creator")
-                        .WithMany("CreatedTasks")
-                        .HasForeignKey("CreatorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Creator");
-                });
-
-            modelBuilder.Entity("RathalOS.Data.Models.WikiTaskUpdate", b =>
-                {
-                    b.HasOne("RathalOS.Data.Models.WikiUser", "Creator")
-                        .WithMany("Updates")
-                        .HasForeignKey("CreatorId");
-
-                    b.HasOne("RathalOS.Data.Models.WikiTask", "Task")
-                        .WithMany("Updates")
-                        .HasForeignKey("TaskId");
-
-                    b.Navigation("Creator");
-
-                    b.Navigation("Task");
-                });
-
             modelBuilder.Entity("RathalOS.Data.Models.MHHOpenTrade", b =>
                 {
                     b.Navigation("ExecutorOffer");
@@ -448,22 +280,9 @@ namespace RathalOS.Migrations
                     b.Navigation("RecipientRequest");
                 });
 
-            modelBuilder.Entity("RathalOS.Data.Models.WikiTask", b =>
-                {
-                    b.Navigation("Assigned");
-
-                    b.Navigation("Updates");
-                });
-
             modelBuilder.Entity("RathalOS.Data.Models.WikiUser", b =>
                 {
                     b.Navigation("Cards");
-
-                    b.Navigation("CreatedTasks");
-
-                    b.Navigation("Updates");
-
-                    b.Navigation("UserAssignments");
                 });
 #pragma warning restore 612, 618
         }

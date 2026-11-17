@@ -78,213 +78,8 @@ namespace RathalOS.Infra
 			return user;
 		}
 
-		[SlashCommand("view", "Views task details for the specified thread. Default: current")]
-		public async Task ViewCommand([Summary("task", "The task to target."), Autocomplete(typeof(TaskAutocomplete))] int? taskId = null)
-		{
-			using Wiki_DbContext ctxt = new();
-			WikiTask? task = ctxt.WikiTasks
-				.Include(x => x.Creator)
-				.Include(x => x.Updates)
-					.ThenInclude(x => x.Creator)
-				.Include(x => x.Assigned)
-					.ThenInclude(x => x.Assignee)
-				.FirstOrDefault(x => taskId != null ? x.Id == taskId.Value : x.ChannelID == Context.Channel.Id);
-			if (task != null)
-			{
-				StringBuilder sb = new();
-				string activity = !task.Stale && !task.Completed && !task.NeedsUpdate && !task.OnHold ? " 💬 Active" : "";
-				sb.AppendLine(@$"__*Description:*__ 
-{task.Description}
-
-__*Updates:*__");
-				foreach (WikiTaskUpdate update in task.Updates.OrderBy(x => x.TimeStamp))
-				{
-					sb.AppendLine($"* {TimestampTag.FormatFromDateTime(update.TimeStamp, TimestampTagStyles.ShortDateTime)} - {update.Update} [{MentionUtils.MentionUser(update.Creator!.UserID)}]");
-				}
-				sb.AppendLine($@"
-__*Status:*__{(task.Stale ? "\r\n💤	Stale" : "")}{(task.Completed ? "\r\n✅	Completed" : "")}{(task.NeedsUpdate ? "\r\n📋	Needs Update" : "")}{(task.OnHold ? "\r\n⏸️	On Hold" : "")}{activity}
-
-__*Assignees:*__
-{string.Join(", ", task.Assigned.Where(x => x.Assignee != null).Select(x => MentionUtils.MentionUser(x.Assignee!.UserID)))}");
-				string channelMention = task.Title;
-				bool exists = await Utilities.ChannelExists(task.ChannelID);
-				if (exists)
-				{
-					channelMention = MentionUtils.MentionChannel(task.ChannelID);
-				}
-				EmbedBuilder builder = new()
-				{
-					Title = $"{channelMention}",
-					Description = sb.ToString()
-				};
-				await RespondAsync(embed: builder.Build(), ephemeral: true);
-			}
-			else
-			{
-				await RespondAsync("The specified thread is not a valid forum thread, or no task exists!", ephemeral: true);
-			}
-		}
-
-		[SlashCommand("update", "Updates task progress.")]
-		public async Task UpdateCommand([Summary("content", "The content of the update.")] string content)
-		{
-			using Wiki_DbContext ctxt = new();
-			WikiTask? task = await ctxt.WikiTasks.Include(x => x.Updates).FirstOrDefaultAsync(x => x.ChannelID == Context.Channel.Id);
-			if (task != null)
-			{
-				WikiUser? user = await ctxt.WikiUsers.FirstOrDefaultAsync(x => x.UserID == Context.User.Id);
-				user ??= new()
-				{
-					UserID = Context.User.Id,
-					Username = Context.User.Username
-				};
-				task.Updates.Add(new WikiTaskUpdate()
-				{
-					Creator = user,
-					TimeStamp = DateTime.UtcNow,
-					Update = content
-				});
-				task.LastUpdate = DateTime.UtcNow;
-				ctxt.Update(task);
-				await ctxt.SaveChangesAsync();
-				await RespondAsync("Task updated! Update: " + content);
-			}
-			else
-			{
-				await RespondAsync("The channel you're in is not a valid forum thread, or no task exists!", ephemeral: true);
-			}
-		}
-
-		[SlashCommand("edit-description", "Updates the description of the specified task. Default: current")]
-		public async Task EditDescription([Summary("content", "The content of the new description.")] string content, [Summary("task", "The task to target."), Autocomplete(typeof(TaskAutocomplete))] int? taskId = null)
-		{
-			using Wiki_DbContext ctxt = new();
-			WikiTask? task = await ctxt.WikiTasks.FirstOrDefaultAsync(x => taskId != null ? x.Id == taskId.Value : x.ChannelID == Context.Channel.Id);
-			if (task != null)
-			{
-				task.Description = content;
-				await ctxt.SaveChangesAsync();
-				await RespondAsync("Description updated! New description: " + content);
-			}
-			else
-			{
-				await RespondAsync("The specified thread is not a valid forum thread, or no task exists!", ephemeral: true);
-			}
-		}
-
-		[SlashCommand("export", "Exports all tasks, archived or otherwise, to an .xlsx file.")]
-		public async Task Export()
-		{
-			await DeferAsync(true);
-			using Wiki_DbContext ctxt = new();
-			using MemoryStream stream = new();
-			using (XLWorkbook workbook = new())
-			{
-				IXLWorksheet current = workbook.AddWorksheet("Current");
-				IXLWorksheet archived = workbook.AddWorksheet("Archived");
-				IXLWorksheet all = workbook.AddWorksheet("All");
-				List<WikiTask> allTasks = [..ctxt.WikiTasks.Include(x => x.Creator)
-							.Include(x => x.Updates)
-								.ThenInclude(x => x.Creator)
-							.Include(x => x.Assigned)
-								.ThenInclude(x => x.Assignee)];
-				DateTime archiveIgnore = DateTime.UtcNow.AddDays(-30);
-				string[] headers = ["Title", "Creator", "Status", "Created", "Last Active", "Last Updated On", "Completed On", "Description", "Last Update", "Tags CSV", "Assigned Users CSV"];
-				for (int i = 1; i <= headers.Length; i++)
-				{
-					current.Cell(1, i).SetValue(headers[i - 1]);
-					archived.Cell(1, i).SetValue(headers[i - 1]);
-					all.Cell(1, i).SetValue(headers[i - 1]);
-				}
-				int rowCnt = 2;
-				foreach (WikiTask task in allTasks.Where(x => !x.Archived && (x.CompletedOn == null || (x.CompletedOn != null && x.CompletedOn.Value > archiveIgnore))))
-				{
-					current.Cell(rowCnt, 1).SetValue(task.Title);
-					current.Cell(rowCnt, 2).SetValue(task.Creator?.Username ?? "");
-					current.Cell(rowCnt, 3).SetValue(task.Archived ? "Archived" : task.Completed ? "Completed" : task.OnHold ? "On Hold" : task.Stale ? "Stale" : task.NeedsUpdate ? "Needs Update" : "Active");
-					current.Cell(rowCnt, 4).SetValue(task.TimeStamp.ToString("G"));
-					current.Cell(rowCnt, 5).SetValue(task.LastActive.ToString("G"));
-					current.Cell(rowCnt, 6).SetValue(task.LastUpdate.ToString("G"));
-					current.Cell(rowCnt, 7).SetValue(task.CompletedOn?.ToString("G") ?? "");
-					current.Cell(rowCnt, 8).SetValue(task.Description);
-					current.Cell(rowCnt, 9).SetValue(task.Updates.OrderByDescending(x => x.TimeStamp).FirstOrDefault()?.Update ?? "");
-					current.Cell(rowCnt, 10).SetValue(task.TagsCSV);
-					current.Cell(rowCnt, 11).SetValue(string.Join(",", task.Assigned.Select(x => x.Assignee!.Username)));
-					rowCnt++;
-				}
-				rowCnt = 2;
-				foreach (WikiTask task in allTasks.Where(x => x.Archived || (x.CompletedOn != null && x.CompletedOn.Value < archiveIgnore)))
-				{
-					archived.Cell(rowCnt, 1).SetValue(task.Title);
-					archived.Cell(rowCnt, 2).SetValue(task.Creator?.Username ?? "");
-					archived.Cell(rowCnt, 3).SetValue("Archived");
-					archived.Cell(rowCnt, 4).SetValue(task.TimeStamp.ToString("G"));
-					archived.Cell(rowCnt, 5).SetValue(task.LastActive.ToString("G"));
-					archived.Cell(rowCnt, 6).SetValue(task.LastUpdate.ToString("G"));
-					archived.Cell(rowCnt, 7).SetValue(task.CompletedOn?.ToString("G") ?? "");
-					archived.Cell(rowCnt, 8).SetValue(task.Description);
-					archived.Cell(rowCnt, 9).SetValue(task.Updates.OrderByDescending(x => x.TimeStamp).FirstOrDefault()?.Update ?? "");
-					archived.Cell(rowCnt, 10).SetValue(task.TagsCSV);
-					archived.Cell(rowCnt, 11).SetValue(string.Join(",", task.Assigned.Select(x => x.Assignee!.Username)));
-					rowCnt++;
-				}
-				rowCnt = 2;
-				foreach (WikiTask task in allTasks)
-				{
-					all.Cell(rowCnt, 1).SetValue(task.Title);
-					all.Cell(rowCnt, 2).SetValue(task.Creator?.Username ?? "");
-					all.Cell(rowCnt, 3).SetValue(task.Archived ? "Archived" : task.Completed ? "Completed" : task.OnHold ? "On Hold" : task.Stale ? "Stale" : task.NeedsUpdate ? "Needs Update" : "Active");
-					all.Cell(rowCnt, 4).SetValue(task.TimeStamp.ToString("G"));
-					all.Cell(rowCnt, 5).SetValue(task.LastActive.ToString("G"));
-					all.Cell(rowCnt, 6).SetValue(task.LastUpdate.ToString("G"));
-					all.Cell(rowCnt, 7).SetValue(task.CompletedOn?.ToString("G") ?? "");
-					all.Cell(rowCnt, 8).SetValue(task.Description);
-					all.Cell(rowCnt, 9).SetValue(task.Updates.OrderByDescending(x => x.TimeStamp).FirstOrDefault()?.Update ?? "");
-					all.Cell(rowCnt, 10).SetValue(task.TagsCSV);
-					all.Cell(rowCnt, 11).SetValue(string.Join(",", task.Assigned.Select(x => x.Assignee!.Username)));
-					rowCnt++;
-				}
-				current.Row(1).Style.Font.Bold = true;
-				current.Columns().AdjustToContents();
-				archived.Row(1).Style.Font.Bold = true;
-				archived.Columns().AdjustToContents();
-				all.Row(1).Style.Font.Bold = true;
-				all.Columns().AdjustToContents();
-				workbook.SaveAs(stream);
-			}
-			using FileAttachment attachment = new(stream, "MHWiki_Tasks_Export.xlsx");
-			await DeleteOriginalResponseAsync();
-			await FollowupWithFileAsync(attachment, ephemeral: true);
-		}
-
-		[SlashCommand("delete", "Deletes task without deleting the thread.")]
-		public async Task Delete([Summary("task", "The task to target."), Autocomplete(typeof(TaskAutocomplete))] int? taskId = null)
-		{
-			using Wiki_DbContext ctxt = new();
-			WikiTask? task = ctxt.WikiTasks.Include(x => x.Creator).Include(x => x.Updates).ThenInclude(x => x.Creator)
-				.FirstOrDefault(x => taskId != null ? x.Id == taskId.Value : x.ChannelID == Context.Channel.Id);
-			if (task != null)
-			{
-				await Utilities.DeleteTask(task.ChannelID);
-				await RespondAsync("Task deleted!", ephemeral: true);
-			}
-			else
-			{
-				await RespondAsync("The specified thread is not a valid forum thread, or no task exists!", ephemeral: true);
-			}
-		}
-
-		[SlashCommand("add-release", "Adds a release date on which to ping assignees in recurring/upcoming tasks with given tag.")]
-		public async Task AddRelease(
-			[Summary("tag", "The tag to search for."), Autocomplete(typeof(TagAutocomplete))] string tag,
-			[Summary("date", "The release date to fire pings on.")] DateTime date)
-		{
-			using Wiki_DbContext ctxt = new();
-			await ctxt.ReleaseDates.AddAsync(new ReleaseDates() { ReleaseDate = date, Tag = tag });
-			await ctxt.SaveChangesAsync();
-			await RespondAsync($"Release date added; tasks tagged with both Upcoming/Recurring and {tag} will have all assignees pinged in the appropriate thread on {date.ToShortDateString()} at noon Eastern Time.", ephemeral: true);
-		}
-
+		#region Only Admins
+		[DefaultMemberPermissions(GuildPermission.Administrator)]
 		[SlashCommand("set-special-edition", "Set the current special edition.")]
 		public async Task SetSpecialEdition([Summary("Edition", "What special edition to use."),
 				Choice("Metal", (int)SpecialEditions.Metal),
@@ -304,6 +99,7 @@ __*Assignees:*__
 			}
 		}
 
+		[DefaultMemberPermissions(GuildPermission.Administrator)]
 		[SlashCommand("set-event", "Set the current event.")]
 		public async Task SetEvent([Summary("Event", "What event to set."),
 				Choice("None", (int)Events.None),
@@ -326,43 +122,12 @@ __*Assignees:*__
 				Console.WriteLine($"[{DateTime.Now:MM/dd/yyyy hh:mm t}] - EXCEPTION - {JsonConvert.SerializeObject(e)}");
 			}
 		}
+		#endregion
 
-		[SlashCommand("mhhc-info", "Displays MHHC server stats, currently active events and special editions, and the developer credits.")]
-		public async Task MHHCInfo()
-		{
-			await DeferAsync(ephemeral: true);
-			try
-			{
-				MHHEnvironmentVariables var = await Wiki_DbContext.GetEnvironmentVariables();
-				await FollowupAsync(embed: new EmbedBuilder()
-				{
-					Title = "",
-					Description = @$"***Info***
-**Currently-Available Special Edition:** {var.CurrentSpecialEdition.GetDescription()}
-**Current Event:** {var.CurrentEvent.GetDescription()}
-**Total Pulls:** {var.TotalPulls}
-**Last Holo Pull:** <t:{var.LastHolo.ToUnixTimeSeconds()}:f>
-**Last Special Edition Pull:** <t:{var.LastSpecial.ToUnixTimeSeconds()}:f>
-**Last Rare Pull:** <t:{var.LastRare.ToUnixTimeSeconds()}:f>
-==============================================
-***Credits***
-Great people whose work the card functions of this bot would be worthless without!
-Cards collected and scanned by: {MentionUtils.MentionUser(155723385723158528)} ([GitHub repository](https://github.com/GrenderG/MHHC_Archive))
-Cards translated by: {MentionUtils.MentionUser(283414458590822401)},  {MentionUtils.MentionUser(928801586338209924)}, and {MentionUtils.MentionUser(156115426739355651)}
-Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot functionality assistance provided by: {MentionUtils.MentionUser(90619531428397056)}
-
--# Ping {MentionUtils.MentionUser(338081040134307840)} for any help/to report a bug."
-				}.Build(), ephemeral: true);
-				//In order: grender, mir, yuwika, mand, deck, rampagerobot
-			}
-			catch (Exception e)
-			{
-				Console.WriteLine($"[{DateTime.Now:MM/dd/yyyy hh:mm t}] - EXCEPTION - {JsonConvert.SerializeObject(e)}");
-			}
-		}
-
-		[SlashCommand("grant", "Grants either pulls or booster packs to a user.")]
-		public async Task Grant([Summary("User", "The user to grant the pull/booster to.")] SocketGuildUser guildUser,
+		#region Only Moderators
+		[DefaultMemberPermissions(GuildPermission.BanMembers)]
+		[SlashCommand("mod-grant", "Only for rewarding participants who helped complete a formal project found in threads/forum posts.")]
+		public async Task ModGrant([Summary("User", "The user to grant the pull/booster to.")] SocketGuildUser guildUser,
 			[Summary("Type", "Whether to grant a pull or a booster."), Choice("Pull", "pull"), Choice("Booster", "booster")] string type,
 			[Summary("Quantity", "How many to grant. Default: 1"), MinValue(1)] int qty = 1)
 		{
@@ -401,6 +166,90 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 					{
 						await FollowupAsync($"This user doesn't have their Wiki account linked yet! Have them run </link-user:{Utilities.GetCommandId("link-user")}> first.", ephemeral: true);
 					}
+				}
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine($"[{DateTime.Now:MM/dd/yyyy hh:mm t}] - EXCEPTION - {JsonConvert.SerializeObject(e)}");
+			}
+		}
+#endregion
+
+		[SlashCommand("mhhc-info", "Displays MHHC server stats, currently active events and special editions, and the developer credits.")]
+		public async Task MHHCInfo()
+		{
+			await DeferAsync(ephemeral: true);
+			try
+			{
+				MHHEnvironmentVariables var = await Wiki_DbContext.GetEnvironmentVariables();
+				await FollowupAsync(embed: new EmbedBuilder()
+				{
+					Title = "",
+					Description = @$"***Info***
+**Currently-Available Special Edition:** {var.CurrentSpecialEdition.GetDescription()}
+**Current Event:** {var.CurrentEvent.GetDescription()}
+**Total Pulls:** {var.TotalPulls}
+**Last Holo Pull:** <t:{var.LastHolo.ToUnixTimeSeconds()}:f>
+**Last Special Edition Pull:** <t:{var.LastSpecial.ToUnixTimeSeconds()}:f>
+**Last Rare Pull:** <t:{var.LastRare.ToUnixTimeSeconds()}:f>
+==============================================
+***Credits***
+Great people whose work the card functions of this bot would be worthless without!
+Cards collected and scanned by: {MentionUtils.MentionUser(155723385723158528)} ([GitHub repository](https://github.com/GrenderG/MHHC_Archive))
+Cards translated by: {MentionUtils.MentionUser(283414458590822401)},  {MentionUtils.MentionUser(928801586338209924)}, and {MentionUtils.MentionUser(156115426739355651)}
+Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot functionality assistance provided by: {MentionUtils.MentionUser(90619531428397056)}
+
+-# Ping {MentionUtils.MentionUser(338081040134307840)} for any help/to report a bug."
+				}.Build(), ephemeral: true);
+				//In order: grender, mir, yuwika, mand, deck, rampagerobot
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine($"[{DateTime.Now:MM/dd/yyyy hh:mm t}] - EXCEPTION - {JsonConvert.SerializeObject(e)}");
+			}
+		}
+
+		[SlashCommand("grant", "Grants pulls to a user.")]
+		public async Task Grant([Summary("User", "The user to grant the pull to.")] SocketGuildUser guildUser,
+			[Summary("Quantity", "How many to grant. Default: 1"), MinValue(1)] int qty = 1)
+		{
+			await DeferAsync(ephemeral: true);
+			try
+			{
+				if (guildUser.Id == Context.User.Id)
+				{
+					await FollowupAsync($"You can't grant yourself pulls! Ask a different game moderator.", ephemeral: true);
+					return;
+				}
+				using (Wiki_DbContext ctxt = new())
+				{
+					MHHEnvironmentVariables var = await Wiki_DbContext.GetEnvironmentVariables();
+					if (var.CurrentEvent == Events.DoublePull)
+					{
+						qty *= 2;
+					}
+					WikiUser? user = await ctxt.WikiUsers.FirstOrDefaultAsync(x => x.UserID == guildUser.Id);
+					WikiUser? grantUser = await ctxt.WikiUsers.FirstOrDefaultAsync(x => x.UserID == Context.User.Id);
+					if (grantUser == null)
+					{
+						await FollowupAsync($"You don't have your Wiki account linked yet! Run </link-user:{Utilities.GetCommandId("link-user")}> first.", ephemeral: true);
+						return;
+					}
+					if (grantUser.GrantPulls < qty)
+					{
+						await FollowupAsync($"You don't have your Wiki account linked yet! Run </link-user:{Utilities.GetCommandId("link-user")}> first.", ephemeral: true);
+						return;
+					}
+					if (user == null)
+					{
+						await FollowupAsync($"This user doesn't have their Wiki account linked yet! Have them run </link-user:{Utilities.GetCommandId("link-user")}> first.", ephemeral: true);
+						return;
+					}
+					grantUser.GrantPulls -= qty;
+					user.Pulls += qty;
+					await ctxt.SaveChangesAsync();
+					await guildUser.SendMessageAsync($"{MentionUtils.MentionUser(Context.User.Id)} has granted you {qty} pull{(qty > 1 ? "s" : "")}!{(var.CurrentEvent == Events.DoublePull || var.CurrentEvent == Events.DoubleBooster ? " Double pulls have been granted due to the current " + var.CurrentEvent.GetDescription() + " Event." : "")}");
+					await FollowupAsync($"You have granted {qty} pull{(qty > 1 ? "s" : "")} to {MentionUtils.MentionUser(guildUser.Id)}!{(var.CurrentEvent == Events.DoublePull || var.CurrentEvent == Events.DoubleBooster ? " Double pulls have been granted due to the current " + var.CurrentEvent.GetDescription() + " Event." : "")}", ephemeral: true);
 				}
 			}
 			catch (Exception e)
@@ -607,6 +456,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 							new TextDisplayBuilder() { Content = @$"## {displayName}'s Profile
 **Wiki Username:** [{user.WikiUsername}](https://monsterhunterwiki.org/wiki/User:{user.WikiUsername})
 **Total Cards:** {user.Cards?.Count ?? 0}
+**Remaining Daily Grants:** {user.GrantPulls}
 **Current Pulls:** {user.Pulls}
 **Current Boosters:** {user.Boosters}
 **Lifetime Opened Pulls:** {user.LifetimePulls}
@@ -1165,7 +1015,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 			}
 			MHHCard template = cards[_rand.Next(0, cards.Count)];
 			MHHCardPackage? pkg = null;
-			int[] allSeries = [..cards.Select(x => Convert.ToInt32(x.CardId[1..x.CardId.IndexOf('-')]))];
+			int[] allSeries = [.. cards.Select(x => Convert.ToInt32(x.CardId[1..x.CardId.IndexOf('-')]))];
 			int series = allSeries[_rand.Next(0, allSeries.Length)];
 			if ((_rand.Next(0, 3) == 0 || template.Rarity == CardRarity.Ultra) && template.Decoration != CardDeco.Holo)
 			{
@@ -1175,7 +1025,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 			{
 				pkg = await MHHCardPackage.BuildCardPackage(series, cardRarity: template.Rarity);
 			}
-			MHHEnvironmentVariables var = await Wiki_DbContext.GetEnvironmentVariables(); 
+			MHHEnvironmentVariables var = await Wiki_DbContext.GetEnvironmentVariables();
 			var.TotalPulls++;
 			if (_monkeyNames.Contains(pkg.Card.CardName))
 			{
@@ -1227,7 +1077,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 					tradeIds = [.. JsonConvert.DeserializeObject<JArray>(user.TradeInventoryJson)!.Select(x => x.Value<int>())];
 				}
 				dbUser.TradeInventoryJson = JsonConvert.SerializeObject(tradeIds.Where(x => !cardIds.Contains(x)).ToArray());
-				dbUser.Cards = [..dbUser.Cards.Where(x => !cardIds.Contains(x.Id))];
+				dbUser.Cards = [.. dbUser.Cards.Where(x => !cardIds.Contains(x.Id))];
 				dbUser.Cards.Add(pkg.Card);
 				await ctxt.SaveChangesAsync();
 			}
@@ -1438,7 +1288,7 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 				dbVar.Monkeys = var.Monkeys;
 				WikiUser dbUser = await ctxt.WikiUsers.FirstAsync(x => x.Id == user.Id);
 #if DEBUG == false
-					dbUser.Pulls -= qty * (forceFoil ? 10 : 1);
+				dbUser.Pulls -= qty * (forceFoil ? 10 : 1);
 #endif
 				dbUser.LifetimePulls += qty;
 				dbUser.Cards ??= [];
@@ -1492,6 +1342,28 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 		}
 
 #if DEBUG
+		[SlashCommand("cashin", "Tests cash in.")]
+		public async Task CashIn()
+		{
+			await DeferAsync();
+			try
+			{
+				WikiUser user = await GetUser(Context.User);
+				if (string.IsNullOrEmpty(user.WikiUsername))
+				{
+					await FollowupAsync($"Your Wiki username and ID could not be linked using your Discord account! Please either change your nickname or display name in the server to match your Wiki username, or run {Utilities.GetCommandId("link-user")} before trying to pull cards.", ephemeral: true);
+					return;
+				}
+				int? editsSince = await user.CashInPulls();
+				editsSince ??= 0;
+				await FollowupAsync($"Cash-in simulated! You've made {editsSince} in the past 28 days. This is{(editsSince < 25 ? " not" :"")} enough to receive a booster pack.", ephemeral: true);
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine($"[{DateTime.Now:MM/dd/yyyy hh:mm t}] - EXCEPTION - {JsonConvert.SerializeObject(e)}");
+			}
+		}
+
 		[SlashCommand("test-card", "Displays a test card as if randomly pulled.")]
 		public async Task TestCard(
 			[Summary("effect", "Generate a card effect?"),
@@ -1580,113 +1452,6 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 			}
 		}
 #endif
-
-		[SlashCommand("list", "Lists all tasks.")]
-		public async Task List(
-			[Summary("order", "The column to order by (default: title)."), Choice("time", "time"), Choice("title", "title"), Choice("lastupdated", "lastupdated"), Choice("status", "status")]
-			string order = "title",
-			[Summary("descending", "Whether you'd like the order to be reversed (true) or not (false). Default is false.")]
-			bool desc = false,
-			[Summary("archived", "Whether you'd like to include archived tasks (true) or not (false). Default is false.")]
-			bool includeArchived = false)
-		{
-			if (_validListOrders.Contains(order))
-			{
-				using Wiki_DbContext ctxt = new();
-				StringBuilder sb = new();
-				sb.AppendLine($"|- 💬 Active -|- ✅ Completed -|- ⏸️ On Hold -|- 📋 Needs Update -|- 💤 Stale -|{(includeArchived ? "- 🔒 Archived -|" : "")}");
-				DateTime archiveIgnore = DateTime.UtcNow.AddDays(-30);
-				List<WikiTask> tasks = [..ctxt.WikiTasks
-						.Include(x => x.Creator)
-						.Where(x => (!x.Archived && (x.CompletedOn == null || (x.CompletedOn != null && x.CompletedOn.Value > archiveIgnore))) || includeArchived)];
-				switch (order.ToLower())
-				{
-					case "title":
-						if (desc)
-						{
-							tasks = [.. tasks.OrderByDescending(x => x.Title)];
-						}
-						else
-						{
-							tasks = [.. tasks.OrderBy(x => x.Title)];
-						}
-						break;
-					case "time":
-						if (desc)
-						{
-							tasks = [.. tasks.OrderByDescending(x => x.TimeStamp)];
-						}
-						else
-						{
-							tasks = [.. tasks.OrderBy(x => x.TimeStamp)];
-						}
-						break;
-					case "status":
-						if (desc)
-						{
-							tasks = [.. tasks.OrderByDescending(x => x.Completed ? 1 : x.NeedsUpdate ? 2 : x.Stale ? 3 : x.OnHold ? 4 : 5)];
-						}
-						else
-						{
-							tasks = [.. tasks.OrderBy(x => x.Completed ? 1 : x.NeedsUpdate ? 2 : x.Stale ? 3 : x.OnHold ? 4 : 5)];
-						}
-						break;
-					case "lastupdated":
-						if (desc)
-						{
-							tasks = [.. tasks.OrderByDescending(x => x.LastUpdate)];
-						}
-						else
-						{
-							tasks = [.. tasks.OrderBy(x => x.LastUpdate)];
-						}
-						break;
-					default:
-						break;
-				}
-				foreach (WikiTask task in tasks)
-				{
-					string channelMention = task.Title;
-					bool exists = await Utilities.ChannelExists(task.ChannelID);
-					if (exists)
-					{
-						channelMention = MentionUtils.MentionChannel(task.ChannelID);
-					}
-					string activity = !task.Stale && !task.Completed && !task.NeedsUpdate && !task.OnHold && !task.Archived ? " 💬" : "";
-					sb.AppendLine(@$"* **{(task.Archived ? " 🔒" : "")}{(task.Stale ? " 💤" : "")}{(task.Completed ? " ✅" : "")}{(task.NeedsUpdate ? " 📋" : "")}{(task.OnHold ? " ⏸️" : "")}{activity} - {channelMention}**");
-				}
-				EmbedBuilder builder = new()
-				{
-					Title = "Current Tasks",
-					Description = sb.ToString()
-				};
-				await RespondAsync(embed: builder.Build(), ephemeral: true);
-			}
-			else
-			{
-				await RespondAsync("Your sort order is not valid!", ephemeral: true);
-			}
-		}
-	}
-
-	public class TaskAutocomplete : AutocompleteHandler
-	{
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-		public override async Task<AutocompletionResult> GenerateSuggestionsAsync(IInteractionContext context, IAutocompleteInteraction autocompleteInteraction, IParameterInfo parameter, IServiceProvider services)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-		{
-			return AutocompletionResult.FromSuccess(Utilities.TaskResults.Take(25));
-		}
-	}
-
-	public class TagAutocomplete : AutocompleteHandler
-	{
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-		public override async Task<AutocompletionResult> GenerateSuggestionsAsync(IInteractionContext context, IAutocompleteInteraction autocompleteInteraction, IParameterInfo parameter, IServiceProvider services)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-		{
-			return AutocompletionResult.FromSuccess(Utilities.Forum!.Tags.Select(x => new AutocompleteResult(x.Name, x.Name)).OrderBy(x => x.Name).Take(25));
-		}
 	}
 
 	public static class IPathExtensions

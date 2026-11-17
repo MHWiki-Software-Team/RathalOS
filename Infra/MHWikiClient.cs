@@ -19,15 +19,14 @@ namespace RathalOS.Infra
 			};
 		}
 
-		public async Task<Tuple<int,bool>?> GetUserEdits(int userId)
+		public async Task<int?> GetUserEdits(int userId)
 		{
 			WikiSite site = new(_client, "https://monsterhunterwiki.org/api.php");
 			await site.Initialization;
 			try
 			{
-				JToken userToken = await site.InvokeMediaWikiApiAsync(new MediaWikiFormRequestMessage(new { action = "query", list = "users", ususerids = $"{userId}", usprop = "editcount|groups" }), new CancellationToken());
-				userToken = userToken.Value<JToken>("query")!.Value<JArray>("users")!.First();
-				return new(userToken.Value<int>("editcount"), userToken.Value<JArray>("groups")!.Any(x => x.Value<string>() == "bot"));
+				JToken revsToken = await site.InvokeMediaWikiApiAsync(new MediaWikiFormRequestMessage(new { action = "query", list = "allrevisions", arvuser = $"#{userId}", arvprop = "ids", arvlimit = 25, arvstart = DateTime.Now.AddDays(-28).Date.ToString("yyyy-MM-ddTHH:mm:ss") }), new CancellationToken());
+				return revsToken.Value<JToken>("query")!.Value<JArray>("allrevisions")!.Count;
 			}
 			catch (WikiClientException ex)
 			{
