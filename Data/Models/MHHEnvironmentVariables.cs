@@ -36,10 +36,34 @@ namespace RathalOS.Data.Models
 
 	public enum SpecialEditions
 	{
-		[Description("Metal")]
+		[Description("⚙ Metal ⚙")]
 		Metal,
-		[Description("Crystal")]
-		Crystal
+		[Description("💎 Crystal 💎")]
+		Crystal,
+		[Description("️⚔ Weapons ⚔")]
+		Weapons,
+		[Description("🥬 Herbs 🥬")]
+		Herbs,
+		[Description("🍄 Mushrooms 🍄")]
+		Mushrooms,
+		[Description("⛰️ Biomes ⛰️")]
+		Biomes,
+		[Description("🏅 Fleets 🏅")]
+		Fleets,
+		[Description("⚖ Elemental Sacs ⚖")]
+		ElementalSacs,
+		[Description("🛡 Armor Spheres 🛡")]
+		ArmorSpheres,
+		[Description("🎊 Festivals 🎊")]
+		Festivals,
+		[Description("🦍 Monkeys 🦍")]
+		Monkeys,
+		[Description("🤖 Guardians 🤖")]
+		Guardians,
+		[Description("🔥 Raths 🔥")]
+		Raths,
+		[Description("🐉 Elders 🐉")]
+		Elders
 	}
 
 	public static class EnumExtensions

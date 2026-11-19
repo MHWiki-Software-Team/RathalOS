@@ -1,20 +1,12 @@
-﻿using DocumentFormat.OpenXml.Bibliography;
-using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
+﻿using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json;
 using RathalOS.Data.Context;
 using RathalOS.Infra;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Drawing.Processing;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text;
-using Color = SixLabors.ImageSharp.Color;
-using Image = SixLabors.ImageSharp.Image;
 
 namespace RathalOS.Data.Models
 {
@@ -683,10 +675,25 @@ namespace RathalOS.Data.Models
 				{ "B08-75", "Uncommon" }
 			};
 		private static readonly List<string[]> _translated = [.. Encoding.UTF8.GetString(CardResources.mhhcdata2)!.Split("\r\n").Select(x => x.Split("\t"))];
-		private static readonly IMemoryCache _cache = Utilities.GetService<IMemoryCache>();
+		private static IMemoryCache? _cache = TryInitCache();
 
-		public static void TryAddCardToCache(Guid cardGuid, MHHCardPackage package)
+		private static IMemoryCache? TryInitCache()
 		{
+			IMemoryCache? cache = null;
+			try
+			{
+				_cache ??= Utilities.GetService<IMemoryCache>();
+			}
+			catch 
+			{
+				//Probably external DLL; no caching
+			}
+			return cache;
+		}
+
+		internal static void TryAddCardToCache(Guid cardGuid, MHHCardPackage package)
+		{
+			_cache ??= Utilities.GetService<IMemoryCache>();
 			_cache.GetOrCreate(cardGuid, x =>
 			{
 				x.AbsoluteExpirationRelativeToNow = new TimeSpan(24, 0, 0);
@@ -703,6 +710,72 @@ namespace RathalOS.Data.Models
 				{  "Rare", CardRarity.Rare },
 				{  "Ultra Rare", CardRarity.Ultra },
 			}[rarityName];
+		}
+
+		public static CardDeco GetDecoInSpecialEdition(SpecialEditions currentSpecialEdition)
+		{
+			int minDeco = 0;
+			int maxDeco = 0;
+			switch (currentSpecialEdition)
+			{
+				case SpecialEditions.Metal:
+					minDeco = (int)CardDeco.Iron;
+					maxDeco = (int)CardDeco.Dragoncore;
+					break;
+				case SpecialEditions.Crystal:
+					minDeco = (int)CardDeco.Firecell;
+					maxDeco = (int)CardDeco.Shadowcore;
+					break;
+				case SpecialEditions.Weapons:
+					minDeco = (int)CardDeco.GreatSword;
+					maxDeco = (int)CardDeco.Bow;
+					break;
+				case SpecialEditions.Herbs:
+					minDeco = (int)CardDeco.Herb;
+					maxDeco = (int)CardDeco.AdamantSeed;
+					break;
+				case SpecialEditions.Mushrooms:
+					minDeco = (int)CardDeco.BlueMushroom;
+					maxDeco = (int)CardDeco.Chillshroom;
+					break;
+				case SpecialEditions.Biomes:
+					minDeco = (int)CardDeco.Woodlands;
+					maxDeco = (int)CardDeco.Volcanoes;
+					break;
+				case SpecialEditions.Fleets:
+					minDeco = (int)CardDeco.FirstFleet;
+					maxDeco = (int)CardDeco.FifthFleet;
+					break;
+				case SpecialEditions.ElementalSacs:
+					minDeco = (int)CardDeco.Toxin;
+					maxDeco = (int)CardDeco.Torrent;
+					break;
+				case SpecialEditions.ArmorSpheres:
+					minDeco = (int)CardDeco.ArmorSphere;
+					maxDeco = (int)CardDeco.HeavyArmorSphere;
+					break;
+				case SpecialEditions.Festivals:
+					minDeco = (int)CardDeco.Blossomdance;
+					maxDeco = (int)CardDeco.Flamefete;
+					break;
+				case SpecialEditions.Monkeys:
+					minDeco = (int)CardDeco.Blangonga;
+					maxDeco = (int)CardDeco.Bishaten;
+					break;
+				case SpecialEditions.Guardians:
+					minDeco = (int)CardDeco.GArkveld;
+					maxDeco = (int)CardDeco.GFulgurAnjanath;
+					break;
+				case SpecialEditions.Raths:
+					minDeco = (int)CardDeco.Rathian;
+					maxDeco = (int)CardDeco.SilverRathalos;
+					break;
+				case SpecialEditions.Elders:
+					minDeco = (int)CardDeco.Chameleos;
+					maxDeco = (int)CardDeco.LaoShanLung;
+					break;
+			}
+			return (CardDeco)_rand.Next(minDeco, maxDeco + 1);
 		}
 
 		public static async Task<CardDeco> RollDeco(int mult = 1, bool forceRare = false)
@@ -732,7 +805,7 @@ namespace RathalOS.Data.Models
 			}
 			else if (_rand.Next(1, maxSpecialChance + 1) == 1 || forceRare)
 			{
-				return (CardDeco)_rand.Next(6 + ((int)var.CurrentSpecialEdition * 6), 12 + ((int)var.CurrentSpecialEdition * 6));
+				return GetDecoInSpecialEdition(var.CurrentSpecialEdition);
 			}
 			else if (_rand.Next(1, maxRareChance + 1) == 1)
 			{
@@ -827,7 +900,7 @@ namespace RathalOS.Data.Models
 				MHHEnvironmentVariables var = await Wiki_DbContext.GetEnvironmentVariables();
 				if (cardDeco < CardDeco.Trophy && cardDeco > CardDeco.Holo)
 				{
-					cardDeco = (CardDeco)_rand.Next(6 + ((int)var.CurrentSpecialEdition * 6), 12 + ((int)var.CurrentSpecialEdition * 6));
+					cardDeco = GetDecoInSpecialEdition(var.CurrentSpecialEdition);
 				}
 				else if (cardDeco > CardDeco.Trophy && cardDeco != CardDeco.Holo)
 				{
@@ -847,7 +920,7 @@ namespace RathalOS.Data.Models
 			MHHCardPackage? ret = null;
 			try
 			{
-				if (cardGuid != null)
+				if (cardGuid != null && _cache != null)
 				{
 					_cache.TryGetValue(cardGuid, out ret);
 				}
@@ -866,54 +939,8 @@ namespace RathalOS.Data.Models
 					}
 					else
 					{
-						using (MemoryStream finalStream = new())
-						{
-							//Outdated database storage
-							//using (Wiki_DbContext ctxt = new())
-							//{
-							//	MHHCardStorage? storedCard = await ctxt.MHHCardStorage.FirstOrDefaultAsync(x => x.Series == series && x.CardNumber == cardNo && x.Decoration == cardDeco);
-							//	srcCardBytes = storedCard?.StoredCard;
-							//	if (srcCardBytes != null)
-							//	{
-							//		finalStream = new(srcCardBytes!);
-							//	}
-							//}
-							if (srcCardBytes == null)
-							{
-								string cardUri = $"https://raw.githubusercontent.com/GrenderG/MHHC_Archive/94f6feca23fd88ce90418168e36d591c5e174b31/Card%20Scans/{(isBaseCard ? "Base" : "Starter")}%20{series:00}/{(isBaseCard ? "B" : "S")}{series:00}-{cardNo:00}.png";
-								if (!_cache.TryGetValue(cardUri, out srcCardBytes))
-								{
-									using (HttpClient client = new())
-									{
-										HttpResponseMessage response = await client.GetAsync(cardUri);
-										srcCardBytes = await response.Content.ReadAsByteArrayAsync();
-										ICacheEntry entry = _cache.CreateEntry(cardUri);
-										entry.AbsoluteExpirationRelativeToNow = new TimeSpan(24, 0, 0);
-										entry.Value = srcCardBytes;
-									}
-								}
-								byte[] newBytes = [];
-								using (MemoryStream ms = new(srcCardBytes!))
-								using (Image baseImage = Image.Load(ms))
-								{
-									baseImage.Mutate(x => x.Resize(2858, 4086));
-									baseImage.Mutate(x =>
-										x.ApplyCardEffects(cardDeco.Value, baseImage, _rand)
-										.EntropyCrop()
-										.RoundCorners(100)
-										.Resize(new ResizeOptions
-										{
-											Size = new Size(x.GetCurrentSize().Width - 10, x.GetCurrentSize().Height - 10),
-											Mode = ResizeMode.Crop
-										})
-										.Resize(baseImage.Width / 2, baseImage.Height / 2)
-									);
-									baseImage.SaveAsPng(finalStream);
-									newBytes = finalStream.ToArray();
-								}
-								srcCardBytes = newBytes;
-							}
-						}
+						Console.WriteLine("Run card builder first!");
+						srcCardBytes = [];
 					}
 					string deco = cardDeco.Value == CardDeco.Normal ? "" : " - " + cardDeco.Value.GetDescription();
 					string[] row = _translated.First(x => x[0] == series.ToString() && x[2] == cardNo.ToString());
@@ -960,237 +987,6 @@ namespace RathalOS.Data.Models
 		}
 	}
 
-	static class IImageProcessingContextExtensions
-	{
-		public static IImageProcessingContext ApplyCardEffects(this IImageProcessingContext ctxt, CardDeco choice, Image baseImage, Random rand)
-		{
-			switch (choice)
-			{
-				case CardDeco.Normal: break;
-				case CardDeco.Holo:
-					{
-						using (Image holoBmp = rand.Next(1, 5) switch
-						{
-							1 => Image.Load(CardResources.holo1),
-							2 => Image.Load(CardResources.holo2),
-							3 => Image.Load(CardResources.holo3),
-							4 => Image.Load(CardResources.holo4),
-							_ => Image.Load(CardResources.holo1),
-						})
-						{
-							holoBmp.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
-							baseImage.Mutate(x => x.DrawImage(holoBmp, .95f));
-						}
-					}
-					break;
-				case CardDeco.Negative:
-					{
-						baseImage.Mutate(x => x.ApplyProcessor(new SixLabors.ImageSharp.Processing.Processors.Filters.InvertProcessor(1f), new Rectangle(28, 475, 2782, 2500)).Saturate(.5f));
-					}
-					break;
-				case CardDeco.Grayscale:
-					{
-						baseImage.Mutate(x => x.Grayscale(new Rectangle(28, 475, 2782, 2500)));
-					}
-					break;
-				case CardDeco.Sepia:
-					{
-						baseImage.Mutate(x => x.Sepia(new Rectangle(28, 475, 2782, 2500)));
-					}
-					break;
-				case CardDeco.Trophy:
-					{
-						using (Image originalBase = baseImage.Clone(x => { }))
-						using (Image yellowBase = baseImage.Clone(x => { }))
-						using (Image goldFoil = Image.Load(CardResources.goldfoil))
-						using (Image liquidGold = Image.Load(CardResources.liquidgold2))
-						using (Image crown = Image.Load(CardResources.crown))
-						{
-							liquidGold.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
-							goldFoil.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
-							baseImage.Mutate(x =>
-							{
-								IImageProcessingContext ctxt = x.DrawImage(goldFoil, 1f)
-									//was .9f
-									.DrawImage(liquidGold, .80f);
-								yellowBase.Mutate(x => x.Invert().Saturate(.8f).Sepia().Saturate(10));
-								ctxt = ctxt.DrawImage(yellowBase, .35f)
-									.DrawImage(crown, backgroundLocation: new Point(1069, 3190), .3f)
-									.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f);
-							}
-							);
-						}
-					}
-					break;
-				case CardDeco.Iron:
-				case CardDeco.Dreamcore:
-				case CardDeco.Artian:
-				case CardDeco.Aquacore:
-				case CardDeco.Eltalite:
-				case CardDeco.Dragoncore:
-					{
-						using (Image originalBase = baseImage.Clone(x => { }))
-						using (Image coloredBase = baseImage.Clone(x => { }))
-						using (Image goldFoil = Image.Load(CardResources.goldfoil))
-						using (Image liquidGold = Image.Load(CardResources.liquidgold2))
-						{
-							liquidGold.Mutate(x => x.Resize(baseImage.Width, baseImage.Height).Grayscale().Saturate(2));
-							goldFoil.Mutate(x => x.Resize(baseImage.Width, baseImage.Height).Grayscale().Saturate(2));
-							goldFoil.Mutate(x => x.Opacity(.5f).DrawImage(liquidGold, 0.5f).Opacity(1f));
-							Color color = Color.Transparent;
-							bool recolor = true;
-							switch (choice)
-							{
-								case CardDeco.Iron:
-									recolor = false;
-									break;
-								case CardDeco.Dreamcore:
-									color = Color.SaddleBrown;
-									break;
-								case CardDeco.Artian:
-									color = Color.DarkSeaGreen;
-									break;
-								case CardDeco.Aquacore:
-									color = Color.SlateBlue;
-									break;
-								case CardDeco.Eltalite:
-									color = Color.Orchid;
-									break;
-								case CardDeco.Dragoncore:
-									color = Color.Purple;
-									break;
-							}
-
-							if (recolor)
-							{
-								coloredBase.Mutate(y => y.Grayscale().Fill(new DrawingOptions()
-								{
-									GraphicsOptions = new GraphicsOptions()
-									{
-										ColorBlendingMode = PixelColorBlendingMode.Overlay,
-										BlendPercentage = 1f
-									}
-								}, color).Invert());
-								goldFoil.Mutate(y => y.Grayscale().Fill(new DrawingOptions()
-								{
-									GraphicsOptions = new GraphicsOptions()
-									{
-										ColorBlendingMode = PixelColorBlendingMode.Overlay,
-										BlendPercentage = 1f
-									}
-								}, color));
-								baseImage.Mutate(x =>
-									x.Grayscale().Fill(new DrawingOptions()
-									{
-										GraphicsOptions = new GraphicsOptions()
-										{
-											ColorBlendingMode = PixelColorBlendingMode.Overlay,
-											BlendPercentage = 1f
-										}
-									}, color)
-									.DrawImage(coloredBase, 1f)
-								);
-							}
-							baseImage.Mutate(x =>
-								x.DrawImage(goldFoil, .75f));
-							if (choice == CardDeco.Iron)
-							{
-								baseImage.Mutate(x => x.Grayscale()
-									.Saturate(10)
-									.Invert());
-							}
-							baseImage.Mutate(x => x.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f));
-						}
-					}
-					break;
-				case CardDeco.Firecell:
-				case CardDeco.Machalite:
-				case CardDeco.Dragonite:
-				case CardDeco.Icium:
-				case CardDeco.Deepsea:
-				case CardDeco.Shadowcore:
-					using (Image originalBase = baseImage.Clone(x => { }))
-					using (Image coloredBase = baseImage.Clone(x => { }))
-					using (Image gem = Image.Load(CardResources.gemlarge))
-					{
-						Color color = Color.Transparent;
-						switch (choice)
-						{
-							case CardDeco.Firecell:
-								color = Color.FromRgb(30, 170, 180);
-								break;
-							case CardDeco.Machalite:
-								color = Color.RebeccaPurple;
-								break;
-							case CardDeco.Dragonite:
-								color = Color.SeaGreen;
-								break;
-							case CardDeco.Icium:
-								color = Color.Red;
-								break;
-							case CardDeco.Deepsea:
-								color = Color.FromRgb(255, 171, 0);
-								break;
-							case CardDeco.Shadowcore:
-								color = Color.FromRgb(55, 130, 0);
-								break;
-						}
-						gem.Mutate(x =>
-							x.Resize(baseImage.Width, baseImage.Height)
-							.Fill(new DrawingOptions()
-							{
-								GraphicsOptions = new GraphicsOptions()
-								{
-									ColorBlendingMode = PixelColorBlendingMode.Overlay,
-									BlendPercentage = 1f
-								}
-							}, color)
-							.Invert()
-							.Saturate(2));
-						coloredBase.Mutate(x => x.Grayscale().Fill(new DrawingOptions()
-						{
-							GraphicsOptions = new GraphicsOptions()
-							{
-								ColorBlendingMode = PixelColorBlendingMode.Overlay,
-								BlendPercentage = 1f
-							}
-						}, color)
-							.Saturate(2));
-						baseImage.Mutate(x =>
-						{
-							x.DrawImage(coloredBase, 1f)
-							.DrawImage(gem, .6f)
-							.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f);
-						});
-					}
-					break;
-				case CardDeco.Unused_NegativeTrophy:
-					using (Image originalBase = baseImage.Clone(x => { }))
-					using (Image yellowBase = baseImage.Clone(x => { }))
-					using (Image goldFoil = Image.Load(CardResources.goldfoil))
-					using (Image liquidGold = Image.Load(CardResources.liquidgold2))
-					using (Image crown = Image.Load(CardResources.crown))
-					{
-						liquidGold.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
-						goldFoil.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
-						baseImage.Mutate(x =>
-						{
-							IImageProcessingContext ctxt = x.DrawImage(goldFoil, 1f)
-								//was .9f
-								.DrawImage(liquidGold, .80f);
-							yellowBase.Mutate(x => x.Sepia().Saturate(10).Invert().Saturate(.8f));
-							ctxt = ctxt.DrawImage(yellowBase, .35f)
-								.DrawImage(crown, backgroundLocation: new Point(1069, 3190), .3f);
-							ctxt.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f);
-						}
-						);
-					}
-					break;
-			}
-			return ctxt;
-		}
-	}
-
 	public enum BoosterRarity
 	{
 		Common,
@@ -1224,10 +1020,9 @@ namespace RathalOS.Data.Models
 		Sepia,
 		[Description("🏆 Trophy 🏆")]
 		Trophy,
-		//Silver
+		#region Metals
 		[Description("⚙️ Iron ⚙️")]
 		Iron,
-		//Bronze
 		[Description("⚙️ Dreamcore ⚙️")]
 		Dreamcore,
 		//Pale green/burnished copper
@@ -1242,6 +1037,8 @@ namespace RathalOS.Data.Models
 		//Purple
 		[Description("⚙️ Dragoncore ⚙️")]
 		Dragoncore,
+		#endregion Metals
+		#region Gems
 		//Orange
 		[Description("💎 Firecell 💎")]
 		Firecell,
@@ -1260,6 +1057,217 @@ namespace RathalOS.Data.Models
 		//Purple
 		[Description("💎 Shadowcore 💎")]
 		Shadowcore,
+		#endregion Gems
+		#region Weapons
+		[Description("⚔️ Great Sword ⚔️")]
+		GreatSword,
+		[Description("⚔️ Long Sword ⚔️")]
+		LongSword,
+		[Description("⚔️ Sword & Shield ⚔️")]
+		SwordAndShield,
+		[Description("⚔️ Dual Blades ⚔️")]
+		DualBlades,
+		[Description("⚔️ Hammer ⚔️")]
+		Hammer,
+		[Description("⚔️ Hunting Horn ⚔️")]
+		HuntingHorn,
+		[Description("⚔️ Lance ⚔️")]
+		Lance,
+		[Description("⚔️ Gunlance ⚔️")]
+		Gunlance,
+		[Description("⚔️ Switch Axe ⚔️")]
+		SwitchAxe,
+		[Description("⚔️ Charge Blade ⚔️")]
+		ChargeBlade,
+		[Description("⚔️ Insect Glaive ⚔️")]
+		InsectGlaive,
+		[Description("⚔️ Light Bowgun ⚔️")]
+		LightBowgun,
+		[Description("⚔️ Heavy Bowgun ⚔️")]
+		HeavyBowgun,
+		[Description("⚔️ Bow ⚔️")]
+		Bow,
+		#endregion Weapons
+		#region Herbs
+		[Description("🥬 Herb 🥬")]
+		Herb,
+		[Description("🥬 Antidote Herb 🥬")]
+		AntidoteHerb,
+		[Description("🥬 Hot Pepper 🥬")]
+		HotPepper,
+		[Description("🥬 Snow Herb 🥬")]
+		SnowHerb,
+		[Description("🥬 Nulberry 🥬")]
+		Nulberry,
+		[Description("🥬 Might Seed 🥬")]
+		MightSeed,
+		[Description("🥬 Adamant Seed 🥬")]
+		AdamantSeed,
+		#endregion Herbs
+		#region Mushrooms
+		[Description("🍄 Blue Mushroom 🍄")]
+		BlueMushroom,
+		[Description("🍄 Mandragora 🍄")]
+		Mandragora,
+		[Description("🍄 Nitroshroom 🍄")]
+		Nitroshroom,
+		[Description("🍄 Devils Blight 🍄")]
+		DevilsBlight,
+		[Description("🍄 Parashroom 🍄")]
+		Parashroom,
+		[Description("🍄 Toadstool 🍄")]
+		Toadstool,
+		[Description("🍄 Exciteshroom 🍄")]
+		Exciteshroom,
+		[Description("🍄 Chillshroom 🍄")]
+		Chillshroom,
+		#endregion Mushrooms
+		#region Biomes
+		[Description("⛰️ Woodlands ⛰️")]
+		Woodlands,
+		[Description("⛰️ Rainforests ⛰️")]
+		Rainforests,
+		[Description("⛰️ Arid Plains ⛰️")]
+		AridPlains,
+		[Description("⛰️ Wetlands & Caves ⛰️")]
+		WetlandsAndCaves,
+		[Description("⛰️ Ruins & Mountains ⛰️")]
+		RuinsAndMountains,
+		[Description("⛰️ Volcanoes ⛰️")]
+		Volcanoes,
+		#endregion Biomes
+		#region Fleets
+		[Description("🏅 First Fleet 🏅")]
+		FirstFleet,
+		[Description("🏅 Second Fleet 🏅")]
+		SecondFleet,
+		[Description("🏅 Third Fleet 🏅")]
+		ThirdFleet,
+		[Description("🏅 Fourth Fleet 🏅")]
+		FourthFleet,
+		[Description("🏅 Fifth Fleet 🏅")]
+		FifthFleet,
+		#endregion Fleets
+		#region Elemental Sacs
+		[Description("⚖️ Toxin ⚖️")]
+		Toxin,
+		[Description("⚖️ Coma ⚖️")]
+		Coma,
+		[Description("⚖️ Inferno ⚖️")]
+		Inferno,
+		[Description("⚖️ Thunder ⚖️")]
+		Thunder,
+		[Description("⚖️ Freezer ⚖️")]
+		Freezer,
+		[Description("⚖️ Torrent ⚖️")]
+		Torrent,
+		#endregion Elemental Sacs
+		#region Armor Spheres
+		[Description("🛡 Armor Sphere 🛡")]
+		ArmorSphere,
+		[Description("🛡 Armor Sphere Plus 🛡")]
+		ArmorSpherePlus,
+		[Description("🛡 Advanced Armor Sphere 🛡")]
+		AdvancedArmorSphere,
+		[Description("🛡 Hard Armor Sphere 🛡")]
+		HardArmorSphere,
+		[Description("🛡 Heavy Armor Sphere 🛡")]
+		HeavyArmorSphere,
+		#endregion Armor Spheres
+		#region Festivals
+		[Description("🎊 Blossomdance 🎊")]
+		Blossomdance,
+		[Description("🎊 Flamefete 🎊")]
+		Flamefete,
+		[Description("🎊 Dreamspell 🎊")]
+		Dreamspell,
+		[Description("🎊 Lumenhymn 🎊")]
+		Lumenhymn,
+		#endregion Festivals
+		#region Monkeys
+		[Description("🦍 Blangonga 🦍")]
+		Blangonga,
+		[Description("🦍 Furious Rajang 🦍")]
+		FuriousRajang,
+		[Description("🦍 Congalala 🦍")]
+		Congalala,
+		[Description("🦍 Kecha Wacha 🦍")]
+		KechaWacha,
+		[Description("🦍 Bishaten 🦍")]
+		Bishaten,
+		#endregion Monkeys
+		#region Guardians
+		[Description("🤖 G. Arkveld 🤖")]
+		GArkveld,
+		[Description("🤖 G. Doshaguma 🤖")]
+		GDoshaguma,
+		[Description("🤖 G. Rathalos 🤖")]
+		GRathalos,
+		[Description("🤖 G. Ebony Odogaron 🤖")]
+		GEbonyOdogaron,
+		[Description("🤖 G. Fulgur Anjanath 🤖")]
+		GFulgurAnjanath,
+		#endregion Guardians
+		#region Raths
+		[Description("🔥 Rathian 🔥")]
+		Rathian,
+		[Description("🔥 Rathalos 🔥")]
+		Rathalos,
+		[Description("🔥 Pink Rathian 🔥")]
+		PinkRathian,
+		[Description("🔥 Azure Rathalos 🔥")]
+		AzureRathalos,
+		[Description("🔥 Dreadqueen Rathian 🔥")]
+		DreadqueenRathian,
+		[Description("🔥 Dreadking Rathalos 🔥")]
+		DreadkingRathalos,
+		[Description("🔥 Gold Rathian 🔥")]
+		GoldRathian,
+		[Description("🔥 Silver Rathalos 🔥")]
+		SilverRathalos,
+		#endregion Raths
+		#region Elders
+		[Description("🐉 Chameleos 🐉")]
+		Chameleos,
+		[Description("🐉 Lunastra 🐉")]
+		Lunastra,
+		[Description("🐉 Teostra 🐉")]
+		Teostra,
+		[Description("🐉 Kushala Daora 🐉")]
+		KushalaDaora,
+		[Description("🐉 Kirin 🐉")]
+		Kirin,
+		[Description("🐉 Kulve Taroth 🐉")]
+		KulveTaroth,
+		[Description("🐉 Malzeno 🐉")]
+		Malzeno,
+		[Description("🐉 Nergigante 🐉")]
+		Nergigante,
+		[Description("🐉 Gore Magala 🐉")]
+		GoreMagala,
+		[Description("🐉 Vaal Hazak 🐉")]
+		VaalHazak,
+		[Description("🐉 Xeno'jiiva 🐉")]
+		XenoJiiva,
+		[Description("🐉 Zorah Magdaros 🐉")]
+		ZorahMagdaros,
+		[Description("🐉 Velkhana 🐉")]
+		Velkhana,
+		[Description("🐉 Gogmazios 🐉")]
+		Gogmazios,
+		[Description("🐉 Crimson Valstrax 🐉")]
+		CrimsonValstrax,
+		[Description("🐉 Dah'ren Mohran 🐉")]
+		DahrenMohran,
+		[Description("🐉 Jhen Mohran 🐉")]
+		JhenMohran,
+		[Description("🐉 Alatreon 🐉")]
+		Alatreon,
+		[Description("🐉 Fatalis 🐉")]
+		Fatalis,
+		[Description("🐉 Lao-Shan Lung 🐉")]
+		LaoShanLung,
+		#endregion Elders
 		[Description("(Unused) Negative Trophy")]
 		Unused_NegativeTrophy
 	}

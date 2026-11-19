@@ -13,7 +13,6 @@ using Quartz.Impl;
 using Quartz.Logging;
 using RathalOS.Data.Context;
 using RathalOS.Data.Models;
-using SixLabors.ImageSharp;
 using System.Configuration;
 using System.Diagnostics;
 using System.Text;

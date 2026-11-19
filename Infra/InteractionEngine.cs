@@ -79,11 +79,15 @@ namespace RathalOS.Infra
 		}
 
 		#region Only Admins
+		//To make a new special edition "live", just add it to these choices
 		[DefaultMemberPermissions(GuildPermission.Administrator)]
 		[SlashCommand("set-special-edition", "Set the current special edition.")]
 		public async Task SetSpecialEdition([Summary("Edition", "What special edition to use."),
 				Choice("Metal", (int)SpecialEditions.Metal),
-				Choice("Crystal", (int)SpecialEditions.Crystal)] int edition = 0)
+				Choice("Crystal", (int)SpecialEditions.Crystal),
+				Choice("Weapons", (int)SpecialEditions.Weapons),
+				Choice("Herbs", (int)SpecialEditions.Herbs),
+				Choice("Mushrooms", (int)SpecialEditions.Mushrooms)] int edition = 0)
 		{
 			await DeferAsync(ephemeral: true);
 			try
@@ -1452,39 +1456,5 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 			}
 		}
 #endif
-	}
-
-	public static class IPathExtensions
-	{
-		private static IImageProcessingContext ApplyRoundedCorners(this IImageProcessingContext ctxt, float cornerRadius)
-		{
-			PathCollection corners = BuildCorners(ctxt.GetCurrentSize(), cornerRadius);
-			return ctxt.Fill(new DrawingOptions() { GraphicsOptions = new GraphicsOptions() { Antialias = true } }, SixLabors.ImageSharp.Color.Transparent, corners);
-		}
-
-		private static PathCollection BuildCorners(Size size, float cornerRadius)
-		{
-			var rect = new RectangularPolygon(-0.5f, -0.5f, cornerRadius, cornerRadius);
-
-			IPath cornerToptLeft = rect.Clip(new EllipsePolygon(cornerRadius - 0.5f, cornerRadius - 0.5f, cornerRadius));
-
-			float rightPos = size.Width - cornerToptLeft.Bounds.Width + 1;
-			float bottomPos = size.Height - cornerToptLeft.Bounds.Height + 1;
-
-			IPath cornerTopRight = cornerToptLeft.RotateDegree(90).Translate(rightPos, 0);
-			IPath cornerBottomLeft = cornerToptLeft.RotateDegree(-90).Translate(0, bottomPos);
-			IPath cornerBottomRight = cornerToptLeft.RotateDegree(180).Translate(rightPos, bottomPos);
-
-			return new PathCollection(cornerToptLeft, cornerBottomLeft, cornerTopRight, cornerBottomRight);
-		}
-
-		public static IImageProcessingContext RoundCorners(this IImageProcessingContext processingContext, float cornerRadius)
-		{
-			return processingContext.Resize(new ResizeOptions
-			{
-				Size = processingContext.GetCurrentSize(),
-				Mode = ResizeMode.Crop
-			}).ApplyRoundedCorners(cornerRadius);
-		}
 	}
 }
