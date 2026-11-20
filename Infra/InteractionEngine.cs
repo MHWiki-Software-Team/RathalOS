@@ -3,6 +3,7 @@ using Discord;
 using Discord.Interactions;
 using Discord.Rest;
 using Discord.WebSocket;
+using DocumentFormat.OpenXml.Office.Word;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
@@ -191,7 +192,7 @@ namespace RathalOS.Infra
 					Title = "",
 					Description = @$"***Info***
 **Currently-Available Special Edition:** {var.CurrentSpecialEdition.GetDescription()}
-**Current Event:** {var.CurrentEvent.GetDescription()}
+**Current Event:** {var.CurrentEvent.GetDescription()} (Preview: </view-special:{Utilities.GetCommandId("view-special")}>)
 **Total Pulls:** {var.TotalPulls}
 **Last Holo Pull:** <t:{var.LastHolo.ToUnixTimeSeconds()}:f>
 **Last Special Edition Pull:** <t:{var.LastSpecial.ToUnixTimeSeconds()}:f>
@@ -1342,6 +1343,66 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 				PaginationPages.Add(msg.Id, new Tuple<int, MHHCardPackage[]>(-1, pkgs));
 				CardUsers.Add(msg.Id, Context.User.Id);
 				MessageStoreTime.Add(msg.Id, DateTime.Now);
+			}
+		}
+
+
+
+		[SlashCommand("view-special", "Displays a random sample card of the current Special Edition.")]
+		public async Task TestCard()
+		{
+			await DeferAsync();
+			List<FileAttachment> attachments = [];
+			List<Embed> embeds = [];
+			List<FileStream> streams = [];
+			try
+			{
+				//max of 8 for base or starter
+				int series = _rand.Next(1, 9);
+				int[] seriesCnts = [];
+				//starters have a weird border
+				bool isBase = true;// _rand.Next(0, 2) == 0;
+				if (isBase)
+				{
+					seriesCnts = [90, 77, 77, 77, 90, 77, 75, 75];
+				}
+				else
+				{
+					seriesCnts = [17, 24, 22, 3, 27, 28, 24, 26];
+				}
+				int cardNo = _rand.Next(1, seriesCnts[series - 1] + 1);
+				MHHEnvironmentVariables var = await Wiki_DbContext.GetEnvironmentVariables();
+				MHHCardPackage pkg = await MHHCardPackage.BuildCardPackage(true, series, cardNo, MHHCardPackage.GetDecoInSpecialEdition(var.CurrentSpecialEdition));
+				using (MemoryStream stream = new(CardResources.pullgif))
+				{
+					ulong cmdId = Utilities.GetCommandId("mhhc-info");
+					IUserMessage msg = await FollowupWithFileAsync(attachment: new(stream, $"pull.gif"), components: new ComponentBuilderV2()
+						.WithTextDisplay($"## What will you pull?")
+						.WithTextDisplay("-# You can close this at any time.")
+						.WithMediaGallery([new MediaGalleryItemProperties() { Description = "it is a mysteryyyy", Media = new UnfurledMediaItemProperties($"attachment://pull.gif") }])
+						.WithTextDisplay($"-# Scans by Grender; TL by Mir, Yuwika, and MandL27. </mhhc-info:{cmdId}> for their links!")
+						.WithActionRow(components: new List<ButtonBuilder>()
+						{
+							new() {
+								CustomId = "NextCardButton",
+								Emote = new Emoji("🔓"),
+								Label = "Open",
+								Style = ButtonStyle.Primary
+							},
+							new() { Style = ButtonStyle.Primary, CustomId = $"Dismiss", Emote = new Emoji("🔚"), Label = $"Close" }
+						}).Build(), ephemeral: false);
+					PaginationPages.Add(msg.Id, new Tuple<int, MHHCardPackage[]>(-1, [pkg]));
+					MessageStoreTime.Add(msg.Id, DateTime.Now);
+				}
+				await FollowupWithFileAsync(attachment: attachments.First(), $"Open this pack for a sample of the current special edition.", embed: embeds[0], ephemeral: false);
+				foreach (FileStream str in streams)
+				{
+					str.Dispose();
+				}
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine($"[{DateTime.Now:MM/dd/yyyy hh:mm t}] - EXCEPTION - {JsonConvert.SerializeObject(e)}");
 			}
 		}
 
