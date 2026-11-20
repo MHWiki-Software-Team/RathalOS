@@ -1346,8 +1346,6 @@ Testing, workshopping, spitballing, brainstorming, and other miscellaneous bot f
 			}
 		}
 
-
-
 		[SlashCommand("view-special", "Displays a random sample card of the current Special Edition.")]
 		public async Task TestCard()
 		{
