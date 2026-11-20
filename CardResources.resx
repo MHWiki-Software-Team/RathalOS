@@ -208,4 +208,70 @@
   <data name="mhhcdata2" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>Effects\mhhccards.csv;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
+  <data name="redsilk" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\redsilk.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="HBGOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\HBGOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="BoOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\BoOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="CBOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\CBOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="GLOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\GLOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="HHOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\HHOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="HmOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\HmOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="IGOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\IGOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="LBGOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\LBGOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="LNOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\LNOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="LSOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\LSOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="SAOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\SAOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="SNSOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\SNSOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="GSOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\GSOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="DBOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\DBOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="LeafOverlay1" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\LeafOverlay1.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="LeafOverlay2" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\LeafOverlay2.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="LeafOverlay3" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\LeafOverlay3.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="LeafOverlay4" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\LeafOverlay4.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="MushroomOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\MushroomOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="MushroomOverlay2" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\MushroomOverlay2.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="HerbOverlay" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>Effects\HerbOverlay.png;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
 </root>

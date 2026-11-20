@@ -39,7 +39,7 @@ namespace RathalOS {
         internal static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
-                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("RathalOS.CardResources", typeof(CardResources).Assembly);
+                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("RathalOSCardBuilder.CardResources", typeof(CardResources).Assembly);
                     resourceMan = temp;
                 }
                 return resourceMan;
@@ -223,9 +223,39 @@ namespace RathalOS {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] BoOverlay {
+            get {
+                object obj = ResourceManager.GetObject("BoOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] CBOverlay {
+            get {
+                object obj = ResourceManager.GetObject("CBOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] crown {
             get {
                 object obj = ResourceManager.GetObject("crown", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] DBOverlay {
+            get {
+                object obj = ResourceManager.GetObject("DBOverlay", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -253,6 +283,16 @@ namespace RathalOS {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] GLOverlay {
+            get {
+                object obj = ResourceManager.GetObject("GLOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] gold {
             get {
                 object obj = ResourceManager.GetObject("gold", resourceCulture);
@@ -266,6 +306,56 @@ namespace RathalOS {
         internal static byte[] goldfoil {
             get {
                 object obj = ResourceManager.GetObject("goldfoil", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] GSOverlay {
+            get {
+                object obj = ResourceManager.GetObject("GSOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] HBGOverlay {
+            get {
+                object obj = ResourceManager.GetObject("HBGOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] HerbOverlay {
+            get {
+                object obj = ResourceManager.GetObject("HerbOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] HHOverlay {
+            get {
+                object obj = ResourceManager.GetObject("HHOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] HmOverlay {
+            get {
+                object obj = ResourceManager.GetObject("HmOverlay", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -313,6 +403,66 @@ namespace RathalOS {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] IGOverlay {
+            get {
+                object obj = ResourceManager.GetObject("IGOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] LBGOverlay {
+            get {
+                object obj = ResourceManager.GetObject("LBGOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] LeafOverlay1 {
+            get {
+                object obj = ResourceManager.GetObject("LeafOverlay1", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] LeafOverlay2 {
+            get {
+                object obj = ResourceManager.GetObject("LeafOverlay2", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] LeafOverlay3 {
+            get {
+                object obj = ResourceManager.GetObject("LeafOverlay3", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] LeafOverlay4 {
+            get {
+                object obj = ResourceManager.GetObject("LeafOverlay4", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] liquidgold {
             get {
                 object obj = ResourceManager.GetObject("liquidgold", resourceCulture);
@@ -326,6 +476,26 @@ namespace RathalOS {
         internal static byte[] liquidgold2 {
             get {
                 object obj = ResourceManager.GetObject("liquidgold2", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] LNOverlay {
+            get {
+                object obj = ResourceManager.GetObject("LNOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] LSOverlay {
+            get {
+                object obj = ResourceManager.GetObject("LSOverlay", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -353,9 +523,59 @@ namespace RathalOS {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] MushroomOverlay {
+            get {
+                object obj = ResourceManager.GetObject("MushroomOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] MushroomOverlay2 {
+            get {
+                object obj = ResourceManager.GetObject("MushroomOverlay2", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] pullgif {
             get {
                 object obj = ResourceManager.GetObject("pullgif", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] redsilk {
+            get {
+                object obj = ResourceManager.GetObject("redsilk", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] SAOverlay {
+            get {
+                object obj = ResourceManager.GetObject("SAOverlay", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] SNSOverlay {
+            get {
+                object obj = ResourceManager.GetObject("SNSOverlay", resourceCulture);
                 return ((byte[])(obj));
             }
         }

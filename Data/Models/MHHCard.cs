@@ -3,6 +3,10 @@ using Newtonsoft.Json;
 using RathalOS.Data.Context;
 using RathalOS.Infra;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -675,21 +679,7 @@ namespace RathalOS.Data.Models
 				{ "B08-75", "Uncommon" }
 			};
 		private static readonly List<string[]> _translated = [.. Encoding.UTF8.GetString(CardResources.mhhcdata2)!.Split("\r\n").Select(x => x.Split("\t"))];
-		private static IMemoryCache? _cache = TryInitCache();
-
-		private static IMemoryCache? TryInitCache()
-		{
-			IMemoryCache? cache = null;
-			try
-			{
-				_cache ??= Utilities.GetService<IMemoryCache>();
-			}
-			catch 
-			{
-				//Probably external DLL; no caching
-			}
-			return cache;
-		}
+		private static IMemoryCache _cache = Utilities.GetService<IMemoryCache>();
 
 		internal static void TryAddCardToCache(Guid cardGuid, MHHCardPackage package)
 		{
@@ -932,15 +922,14 @@ namespace RathalOS.Data.Models
 					bool forceRare = boosterRarity != null && ((boosterRarity == BoosterRarity.Uncommon && cardRarity == CardRarity.Common) || (boosterRarity == BoosterRarity.Foil && cardRarity == CardRarity.Rare));
 					cardDeco ??= boosterRarity == BoosterRarity.Common ? CardDeco.Normal : await RollDeco(mult, forceRare: forceRare);
 					byte[]? srcCardBytes = null;
-					string cardPath = Path.Combine(Utilities.CardStoragePath, series.ToString(), cardNo + "_" + cardDeco.GetDescription() + ".json");
+					string cardPath = System.IO.Path.Combine(Utilities.CardStoragePath, series.ToString(), cardNo + "_" + cardDeco.GetDescription() + ".json");
 					if (File.Exists(cardPath))
 					{
 						srcCardBytes = JsonConvert.DeserializeObject<MHHCardStorage>(File.ReadAllText(cardPath))!.StoredCard;
 					}
 					else
 					{
-						Console.WriteLine("Run card builder first!");
-						srcCardBytes = [];
+						srcCardBytes = await PaintCard(cardDeco, series, cardNo);
 					}
 					string deco = cardDeco.Value == CardDeco.Normal ? "" : " - " + cardDeco.Value.GetDescription();
 					string[] row = _translated.First(x => x[0] == series.ToString() && x[2] == cardNo.ToString());
@@ -963,20 +952,6 @@ namespace RathalOS.Data.Models
 						},
 						CardBytes = srcCardBytes
 					};
-					//using (Wiki_DbContext ctxt = new())
-					//{
-					//if (!ctxt.MHHCardStorage.Any(x => x.Series == series && x.CardNumber == cardNo && x.Decoration == cardDeco!))
-					//{
-					//	await ctxt.MHHCardStorage.AddAsync(new()
-					//	{
-					//		CardNumber = cardNo,
-					//		Decoration = cardDeco.Value,
-					//		Series = series,
-					//		StoredCard = srcCardBytes!
-					//	});
-					//	await ctxt.SaveChangesAsync();
-					//}
-					//}
 				}
 			}
 			catch (Exception e)
@@ -984,6 +959,45 @@ namespace RathalOS.Data.Models
 				Console.WriteLine($"[{DateTime.Now:MM/dd/yyyy hh:mm t}] - EXCEPTION - {JsonConvert.SerializeObject(e)}");
 			}
 			return ret!;
+		}
+
+		static async Task<byte[]> PaintCard(CardDeco? deco, int series, int cardNumber)
+		{
+			byte[]? srcCardBytes = [];
+			string cacheKey = $"{(deco == null ? "-1" : (int)deco)}_{series}_{cardNumber}";
+			if (_cache.TryGetValue(cacheKey, out srcCardBytes))
+			{
+				return srcCardBytes!;
+			}
+			using (MemoryStream finalStream = new())
+			{
+				byte[] newBytes = [];
+				MHHCardStorage stg = await Utilities.FetchRootCard(series, cardNumber);
+				srcCardBytes = stg.StoredCard;
+				using (MemoryStream ms = new(srcCardBytes!))
+				using (Image baseImage = Image.Load(ms))
+				{
+					baseImage.Mutate(x => x.Resize(2858, 4086));
+					baseImage.Mutate(x =>
+						x.ApplyCardEffects(deco, baseImage, _rand)
+						.EntropyCrop()
+						.RoundCorners(100)
+						.Resize(new ResizeOptions
+						{
+							Size = new Size(x.GetCurrentSize().Width - 10, x.GetCurrentSize().Height - 10),
+							Mode = ResizeMode.Crop
+						})
+						.Resize(baseImage.Width / 2, baseImage.Height / 2)
+					);
+					baseImage.SaveAsPng(finalStream);
+					newBytes = finalStream.ToArray();
+				}
+				srcCardBytes = newBytes;
+				ICacheEntry entry = _cache.CreateEntry(cacheKey);
+				entry.AbsoluteExpirationRelativeToNow = new TimeSpan(24, 0, 0);
+				entry.Value = srcCardBytes;
+			}
+			return srcCardBytes!;
 		}
 	}
 
@@ -1270,5 +1284,477 @@ namespace RathalOS.Data.Models
 		#endregion Elders
 		[Description("(Unused) Negative Trophy")]
 		Unused_NegativeTrophy
+	}
+
+	static class IImageProcessingContextExtensions
+	{
+		public static IImageProcessingContext ApplyCardEffects(this IImageProcessingContext ctxt, CardDeco? choice, Image baseImage, Random rand)
+		{
+			if (choice == null)
+			{
+				return ctxt;
+			}
+			switch (choice)
+			{
+				case CardDeco.Normal: break;
+				case CardDeco.Holo:
+					{
+						using (Image holoBmp = rand.Next(1, 5) switch
+						{
+							1 => Image.Load(CardResources.holo1),
+							2 => Image.Load(CardResources.holo2),
+							3 => Image.Load(CardResources.holo3),
+							4 => Image.Load(CardResources.holo4),
+							_ => Image.Load(CardResources.holo1),
+						})
+						{
+							holoBmp.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
+							baseImage.Mutate(x => x.DrawImage(holoBmp, .95f));
+						}
+					}
+					break;
+				case CardDeco.Negative:
+					{
+						baseImage.Mutate(x => x.ApplyProcessor(new SixLabors.ImageSharp.Processing.Processors.Filters.InvertProcessor(1f), new Rectangle(28, 475, 2782, 2500)).Saturate(.5f));
+					}
+					break;
+				case CardDeco.Grayscale:
+					{
+						baseImage.Mutate(x => x.Grayscale(new Rectangle(28, 475, 2782, 2500)));
+					}
+					break;
+				case CardDeco.Sepia:
+					{
+						baseImage.Mutate(x => x.Sepia(new Rectangle(28, 475, 2782, 2500)));
+					}
+					break;
+				case CardDeco.Trophy:
+					{
+						using (Image originalBase = baseImage.Clone(x => { }))
+						using (Image yellowBase = baseImage.Clone(x => { }))
+						using (Image goldFoil = Image.Load(CardResources.goldfoil))
+						using (Image liquidGold = Image.Load(CardResources.liquidgold2))
+						using (Image crown = Image.Load(CardResources.crown))
+						{
+							liquidGold.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
+							goldFoil.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
+							baseImage.Mutate(x =>
+							{
+								IImageProcessingContext ctxt = x.DrawImage(goldFoil, 1f)
+									//was .9f
+									.DrawImage(liquidGold, .80f);
+								yellowBase.Mutate(x => x.Invert().Saturate(.8f).Sepia().Saturate(10));
+								ctxt = ctxt.DrawImage(yellowBase, .35f)
+									.DrawImage(crown, backgroundLocation: new Point(1069, 3190), .3f)
+									.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f);
+							}
+							);
+						}
+					}
+					break;
+				case CardDeco choiceTemp when choiceTemp >= CardDeco.Iron && choiceTemp <= CardDeco.Dragoncore:
+					{
+						using (Image originalBase = baseImage.Clone(x => { }))
+						using (Image coloredBase = baseImage.Clone(x => { }))
+						using (Image goldFoil = Image.Load(CardResources.goldfoil))
+						using (Image liquidGold = Image.Load(CardResources.liquidgold2))
+						{
+							liquidGold.Mutate(x => x.Resize(baseImage.Width, baseImage.Height).Grayscale().Saturate(2));
+							goldFoil.Mutate(x => x.Resize(baseImage.Width, baseImage.Height).Grayscale().Saturate(2));
+							goldFoil.Mutate(x => x.Opacity(.5f).DrawImage(liquidGold, 0.5f).Opacity(1f));
+							Color color = Color.Transparent;
+							bool recolor = true;
+							switch (choice)
+							{
+								case CardDeco.Iron:
+									recolor = false;
+									break;
+								case CardDeco.Dreamcore:
+									color = Color.SaddleBrown;
+									break;
+								case CardDeco.Artian:
+									color = Color.DarkSeaGreen;
+									break;
+								case CardDeco.Aquacore:
+									color = Color.SlateBlue;
+									break;
+								case CardDeco.Eltalite:
+									color = Color.Orchid;
+									break;
+								case CardDeco.Dragoncore:
+									color = Color.Purple;
+									break;
+							}
+
+							if (recolor)
+							{
+								coloredBase.Mutate(y => y.Grayscale().Fill(new DrawingOptions()
+								{
+									GraphicsOptions = new GraphicsOptions()
+									{
+										ColorBlendingMode = PixelColorBlendingMode.Overlay,
+										BlendPercentage = 1f
+									}
+								}, color).Invert());
+								goldFoil.Mutate(y => y.Grayscale().Fill(new DrawingOptions()
+								{
+									GraphicsOptions = new GraphicsOptions()
+									{
+										ColorBlendingMode = PixelColorBlendingMode.Overlay,
+										BlendPercentage = 1f
+									}
+								}, color));
+								baseImage.Mutate(x =>
+									x.Grayscale().Fill(new DrawingOptions()
+									{
+										GraphicsOptions = new GraphicsOptions()
+										{
+											ColorBlendingMode = PixelColorBlendingMode.Overlay,
+											BlendPercentage = 1f
+										}
+									}, color)
+									.DrawImage(coloredBase, 1f)
+								);
+							}
+							baseImage.Mutate(x =>
+								x.DrawImage(goldFoil, .75f));
+							if (choice == CardDeco.Iron)
+							{
+								baseImage.Mutate(x => x.Grayscale()
+									.Saturate(10)
+									.Invert());
+							}
+							baseImage.Mutate(x => x.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f));
+						}
+					}
+					break;
+				case CardDeco choiceTemp when choiceTemp >= CardDeco.Firecell && choiceTemp <= CardDeco.Shadowcore:
+					using (Image originalBase = baseImage.Clone(x => { }))
+					using (Image coloredBase = baseImage.Clone(x => { }))
+					using (Image gem = Image.Load(CardResources.gemlarge))
+					{
+						Color color = Color.Transparent;
+						switch (choice)
+						{
+							case CardDeco.Firecell:
+								color = Color.FromRgb(30, 170, 180);
+								break;
+							case CardDeco.Machalite:
+								color = Color.RebeccaPurple;
+								break;
+							case CardDeco.Dragonite:
+								color = Color.SeaGreen;
+								break;
+							case CardDeco.Icium:
+								color = Color.Red;
+								break;
+							case CardDeco.Deepsea:
+								color = Color.FromRgb(255, 171, 0);
+								break;
+							case CardDeco.Shadowcore:
+								color = Color.FromRgb(55, 130, 0);
+								break;
+						}
+						gem.Mutate(x =>
+							x.Resize(baseImage.Width, baseImage.Height)
+							.Fill(new DrawingOptions()
+							{
+								GraphicsOptions = new GraphicsOptions()
+								{
+									ColorBlendingMode = PixelColorBlendingMode.Overlay,
+									BlendPercentage = 1f
+								}
+							}, color)
+							.Invert()
+							.Saturate(2));
+						coloredBase.Mutate(x => x.Grayscale().Fill(new DrawingOptions()
+						{
+							GraphicsOptions = new GraphicsOptions()
+							{
+								ColorBlendingMode = PixelColorBlendingMode.Overlay,
+								BlendPercentage = 1f
+							}
+						}, color)
+							.Saturate(2));
+						baseImage.Mutate(x =>
+						{
+							x.DrawImage(coloredBase, 1f)
+							.DrawImage(gem, .6f)
+							.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f);
+						});
+					}
+					break;
+				case CardDeco choiceTemp when choiceTemp >= CardDeco.GreatSword && choiceTemp <= CardDeco.Bow:
+					byte[] overlay = new byte[0];
+					switch (choice)
+					{
+						case CardDeco.GreatSword:
+							overlay = CardResources.GSOverlay;
+							break;
+						case CardDeco.LongSword:
+							overlay = CardResources.LSOverlay;
+							break;
+						case CardDeco.SwordAndShield:
+							overlay = CardResources.SNSOverlay;
+							break;
+						case CardDeco.Hammer:
+							overlay = CardResources.HmOverlay;
+							break;
+						case CardDeco.HuntingHorn:
+							overlay = CardResources.HHOverlay;
+							break;
+						case CardDeco.ChargeBlade:
+							overlay = CardResources.CBOverlay;
+							break;
+						case CardDeco.Gunlance:
+							overlay = CardResources.GLOverlay;
+							break;
+						case CardDeco.InsectGlaive:
+							overlay = CardResources.IGOverlay;
+							break;
+						case CardDeco.Bow:
+							overlay = CardResources.BoOverlay;
+							break;
+						case CardDeco.HeavyBowgun:
+							overlay = CardResources.HBGOverlay;
+							break;
+						case CardDeco.LightBowgun:
+							overlay = CardResources.LBGOverlay;
+							break;
+						case CardDeco.SwitchAxe:
+							overlay = CardResources.SAOverlay;
+							break;
+						case CardDeco.Lance:
+							overlay = CardResources.LNOverlay;
+							break;
+						case CardDeco.DualBlades:
+							overlay = CardResources.DBOverlay;
+							break;
+					}
+					using (Image originalBase = baseImage.Clone(x => { }))
+					using (Image redSilk = Image.Load(CardResources.redsilk))
+					using (Image weaponOverlay = Image.Load(overlay))
+					{
+						redSilk.Mutate(x => x.Saturate(.8f));
+						redSilk.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
+						weaponOverlay.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
+						baseImage.Mutate(x =>
+						{
+							x.DrawImage(redSilk, .45f)
+							.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f)
+							.DrawImage(weaponOverlay, .5f);
+						});
+					}
+					break;
+				case CardDeco choiceTemp when choiceTemp >= CardDeco.Herb && choiceTemp <= CardDeco.AdamantSeed:
+					{
+						Color color;
+						switch (choice)
+						{
+							case CardDeco.Herb:
+								color = Color.ForestGreen;
+								break;
+							case CardDeco.AntidoteHerb:
+								color = Color.RebeccaPurple;
+								break;
+							case CardDeco.HotPepper:
+								color = Color.OrangeRed;
+								break;
+							case CardDeco.SnowHerb:
+								color = Color.WhiteSmoke;
+								break;
+							case CardDeco.Nulberry:
+								color = Color.CornflowerBlue;
+								break;
+							case CardDeco.MightSeed:
+								color = Color.IndianRed;
+								break;
+							case CardDeco.AdamantSeed:
+								color = Color.SaddleBrown;
+								break;
+							default: color = Color.ForestGreen; break;
+						}
+						using (Image originalBase = baseImage.Clone(x => { }))
+						using (Image leafOverlay = Image.Load(CardResources.LeafOverlay1))
+						using (Image herbOverlay = Image.Load(CardResources.HerbOverlay))
+						{
+							herbOverlay.Mutate(x => x.Grayscale()
+								.Saturate(.5f));
+							leafOverlay.Mutate(x => x.Grayscale()
+								.Saturate(.8f)
+								.Fill(new DrawingOptions()
+								{
+									GraphicsOptions = new GraphicsOptions()
+									{
+										ColorBlendingMode = PixelColorBlendingMode.Overlay,
+										BlendPercentage = 1f
+									}
+								}, color)
+								.Saturate(2));
+							leafOverlay.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
+							herbOverlay.Mutate(x => x.Fill(new DrawingOptions()
+							{
+								GraphicsOptions = new GraphicsOptions()
+								{
+									ColorBlendingMode = PixelColorBlendingMode.Add,
+									BlendPercentage = .85f,
+									AlphaCompositionMode = PixelAlphaCompositionMode.SrcIn
+								}
+							}, color).Saturate(.65f).Resize(baseImage.Width, baseImage.Height));
+							baseImage.Mutate(x =>
+							{
+								x.Grayscale()
+								.Saturate(.8f)
+								.Fill(new DrawingOptions()
+								{
+									GraphicsOptions = new GraphicsOptions()
+									{
+										ColorBlendingMode = PixelColorBlendingMode.Overlay,
+										BlendPercentage = 1f
+									}
+								}, color)
+								.DrawImage(leafOverlay, .45f)
+								.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f)
+								.DrawImage(herbOverlay, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f);
+							});
+						}
+					}
+					break;
+				case CardDeco choiceTemp when choiceTemp >= CardDeco.BlueMushroom && choiceTemp <= CardDeco.Chillshroom:
+					{
+						Color color;
+						switch (choice)
+						{
+							case CardDeco.BlueMushroom:
+								color = Color.Blue;
+								break;
+							case CardDeco.Mandragora:
+								color = Color.SandyBrown;
+								break;
+							case CardDeco.Nitroshroom:
+								color = Color.IndianRed;
+								break;
+							case CardDeco.DevilsBlight:
+								color = Color.DarkRed;
+								break;
+							case CardDeco.Parashroom:
+								color = Color.Yellow;
+								break;
+							case CardDeco.Toadstool:
+								color = Color.RebeccaPurple;
+								break;
+							case CardDeco.Exciteshroom:
+								color = Color.SpringGreen;
+								break;
+							case CardDeco.Chillshroom:
+								color = Color.WhiteSmoke;
+								break;
+							default: color = Color.CadetBlue; break;
+						}
+						using (Image originalBase = baseImage.Clone(x => { }))
+						using (Image mushroomOverlay = Image.Load(CardResources.MushroomOverlay))
+						using (Image mushroomOverlay2 = Image.Load(CardResources.MushroomOverlay2))
+						{
+							mushroomOverlay2.Mutate(x => x.Grayscale()
+								.Saturate(.5f));
+							mushroomOverlay.Mutate(x => x.Resize(baseImage.Width, baseImage.Height)
+								.Grayscale()
+								.Saturate(.8f)
+								.Fill(new DrawingOptions()
+								{
+									GraphicsOptions = new GraphicsOptions()
+									{
+										ColorBlendingMode = PixelColorBlendingMode.Overlay,
+										BlendPercentage = 1f
+									}
+								}, color)
+								.Saturate(2));
+							mushroomOverlay2.Mutate(x => x.Fill(new DrawingOptions()
+							{
+								GraphicsOptions = new GraphicsOptions()
+								{
+									ColorBlendingMode = PixelColorBlendingMode.Add,
+									BlendPercentage = .85f,
+									AlphaCompositionMode = PixelAlphaCompositionMode.SrcIn
+								}
+							}, color).Saturate(.65f).Resize(baseImage.Width, baseImage.Height));
+							baseImage.Mutate(x =>
+							{
+								x.Grayscale()
+								.Saturate(.8f)
+								.Fill(new DrawingOptions()
+								{
+									GraphicsOptions = new GraphicsOptions()
+									{
+										ColorBlendingMode = PixelColorBlendingMode.Overlay,
+										BlendPercentage = 1f
+									}
+								}, color)
+								.DrawImage(mushroomOverlay, .45f)
+								.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f)
+								.DrawImage(mushroomOverlay2, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f);
+							});
+						}
+					}
+					break;
+				case CardDeco.Unused_NegativeTrophy:
+					using (Image originalBase = baseImage.Clone(x => { }))
+					using (Image yellowBase = baseImage.Clone(x => { }))
+					using (Image goldFoil = Image.Load(CardResources.goldfoil))
+					using (Image liquidGold = Image.Load(CardResources.liquidgold2))
+					using (Image crown = Image.Load(CardResources.crown))
+					{
+						liquidGold.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
+						goldFoil.Mutate(x => x.Resize(baseImage.Width, baseImage.Height));
+						baseImage.Mutate(x =>
+						{
+							IImageProcessingContext ctxt = x.DrawImage(goldFoil, 1f)
+								//was .9f
+								.DrawImage(liquidGold, .80f);
+							yellowBase.Mutate(x => x.Sepia().Saturate(10).Invert().Saturate(.8f));
+							ctxt = ctxt.DrawImage(yellowBase, .35f)
+								.DrawImage(crown, backgroundLocation: new Point(1069, 3190), .3f);
+							ctxt.DrawImage(originalBase, backgroundLocation: new Point(28, 475), foregroundRectangle: new Rectangle(28, 475, 2782, 2500), 1f);
+						}
+						);
+					}
+					break;
+			}
+			return ctxt;
+		}
+	}
+
+	public static class IPathExtensions
+	{
+		private static IImageProcessingContext ApplyRoundedCorners(this IImageProcessingContext ctxt, float cornerRadius)
+		{
+			PathCollection corners = BuildCorners(ctxt.GetCurrentSize(), cornerRadius);
+			return ctxt.Fill(new DrawingOptions() { GraphicsOptions = new GraphicsOptions() { Antialias = true } }, SixLabors.ImageSharp.Color.Transparent, corners);
+		}
+
+		private static PathCollection BuildCorners(Size size, float cornerRadius)
+		{
+			var rect = new RectangularPolygon(-0.5f, -0.5f, cornerRadius, cornerRadius);
+
+			IPath cornerToptLeft = rect.Clip(new EllipsePolygon(cornerRadius - 0.5f, cornerRadius - 0.5f, cornerRadius));
+
+			float rightPos = size.Width - cornerToptLeft.Bounds.Width + 1;
+			float bottomPos = size.Height - cornerToptLeft.Bounds.Height + 1;
+
+			IPath cornerTopRight = cornerToptLeft.RotateDegree(90).Translate(rightPos, 0);
+			IPath cornerBottomLeft = cornerToptLeft.RotateDegree(-90).Translate(0, bottomPos);
+			IPath cornerBottomRight = cornerToptLeft.RotateDegree(180).Translate(rightPos, bottomPos);
+
+			return new PathCollection(cornerToptLeft, cornerBottomLeft, cornerTopRight, cornerBottomRight);
+		}
+
+		public static IImageProcessingContext RoundCorners(this IImageProcessingContext processingContext, float cornerRadius)
+		{
+			return processingContext.Resize(new ResizeOptions
+			{
+				Size = processingContext.GetCurrentSize(),
+				Mode = ResizeMode.Crop
+			}).ApplyRoundedCorners(cornerRadius);
+		}
 	}
 }

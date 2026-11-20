@@ -5,6 +5,7 @@ using Discord.Net;
 using Discord.Rest;
 using Discord.WebSocket;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -35,6 +36,7 @@ namespace RathalOS.Infra
 		private static IScheduler? _scheduler;
 		private static IReadOnlyCollection<IApplicationCommand> _cmds = [];
 		private static ulong? _cmdId = null;
+		private IMemoryCache? _cache;
 
 		public static IGuildUser ToIGuildUser(IUser user)
 		{
@@ -51,6 +53,7 @@ namespace RathalOS.Infra
 		{
 			await using var services = ConfigureServices();
 			_services = services;
+			_cache = services.GetRequiredService<IMemoryCache>();
 			DiscordSocketConfig socketConfig = new()
 			{
 				GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.GuildMembers | GatewayIntents.GuildPresences | GatewayIntents.MessageContent | GatewayIntents.Guilds | GatewayIntents.GuildMessages
@@ -95,68 +98,26 @@ namespace RathalOS.Infra
 				{
 					ctxt.Database.Migrate();
 					await Wiki_DbContext.GetEnvironmentVariables();
-					//if you want the db overhead, you could always do this
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-					Task.Run(async () =>
+					for (int series = 1; series <= 8; series++)
 					{
-						for (int series = 1; series <= 8; series++)
+						int[] seriesCnts = [];
+						//starters have a weird border and no rarities
+						bool isBase = true;// _rand.Next(0, 2) == 0;
+						if (isBase)
 						{
-							string seriesPath = Path.Combine(CardStoragePath, series.ToString());
-							if (!Directory.Exists(seriesPath))
-							{
-								Directory.CreateDirectory(seriesPath);
-							}
-							int[] seriesCnts = [];
-							//starters have a weird border and no rarities
-							bool isBase = true;// _rand.Next(0, 2) == 0;
-							if (isBase)
-							{
-								seriesCnts = [90, 77, 77, 77, 90, 77, 75, 75];
-							}
-							else
-							{
-								seriesCnts = [17, 24, 22, 3, 27, 28, 24, 26];
-							}
-							List<MHHCardStorage> storageCardsForSeries = [];
-							for (int cardNumber = 1; cardNumber <= seriesCnts[series - 1]; cardNumber++)
-							{
-								foreach (CardDeco deco in Enum.GetValues(typeof(CardDeco)))
-								{
-									//Database card storage for if the app is containerized (not recommended)
-									//if (!ctxt.MHHCardStorage.Any(x => x.Series == series && x.CardNumber == cardNumber && x.Decoration == deco))
-									//{
-									//	MHHCardPackage pkg = await MHHCardPackage.BuildCardPackage(true, series, cardNumber, deco);
-									//	storageCardsForSeries.Add(new MHHCardStorage()
-									//	{
-									//		CardNumber = cardNumber,
-									//		Series = series,
-									//		Decoration = deco,
-									//		StoredCard = pkg.CardBytes
-									//	});
-									//}
-									string? decoDesc = deco.GetDescription();
-									string cardPath = Path.Combine(seriesPath, cardNumber + "_" + decoDesc + ".json");
-									if (!File.Exists(cardPath))
-									{
-										MHHCardPackage pkg = await MHHCardPackage.BuildCardPackage(true, series, cardNumber, deco);
-										File.WriteAllText(cardPath, JsonConvert.SerializeObject(new MHHCardStorage()
-										{
-											CardNumber = cardNumber,
-											Series = series,
-											Decoration = deco,
-											StoredCard = pkg.CardBytes
-										}));
-										Console.WriteLine($"Wrote B{series:D2} {cardNumber}/{seriesCnts[series - 1]} - {decoDesc}");
-									}
-								}
-							}
-							//if (storageCardsForSeries.Count > 0)
-							//{
-							//	ctxt.MHHCardStorage.AddRange(storageCardsForSeries);
-							//	ctxt.SaveChangesAsync();
-							//}
+							seriesCnts = [90, 77, 77, 77, 90, 77, 75, 75];
 						}
-					});
+						else
+						{
+							seriesCnts = [17, 24, 22, 3, 27, 28, 24, 26];
+						}
+						for (int cardNumber = 1; cardNumber <= seriesCnts[series - 1]; cardNumber++)
+						{
+							StoreRootCard(series, cardNumber);
+							Console.WriteLine($"Stored or read B{series:D2} {cardNumber}/{seriesCnts[series - 1]}");
+						}
+					}
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 				}
 				Owner = mainGuild.Users.First(x => x.Username.Equals(ConfigurationManager.AppSettings.Get("BotOwner"), StringComparison.CurrentCultureIgnoreCase));
@@ -194,6 +155,38 @@ namespace RathalOS.Infra
 			catch (Exception e)
 			{
 				Console.WriteLine($"[{DateTime.Now:MM/dd/yyyy hh:mm t}] - EXCEPTION - {JsonConvert.SerializeObject(e)}");
+			}
+		}
+
+		public static async Task<MHHCardStorage> FetchRootCard(int series, int cardNumber)
+		{
+			string seriesPath = Path.Combine(CardStoragePath, series.ToString());
+			if (!Directory.Exists(seriesPath))
+			{
+				Directory.CreateDirectory(seriesPath);
+			}
+			string cardPath = Path.Combine(seriesPath, cardNumber + ".json");
+			string fileText = await File.ReadAllTextAsync(cardPath);
+			return JsonConvert.DeserializeObject<MHHCardStorage>(fileText)!;
+		}
+
+		public static async Task StoreRootCard(int series, int cardNumber)
+		{
+			string seriesPath = Path.Combine(CardStoragePath, series.ToString());
+			if (!Directory.Exists(seriesPath))
+			{
+				Directory.CreateDirectory(seriesPath);
+			}
+			string cardPath = Path.Combine(seriesPath, cardNumber + ".json");
+			if (!File.Exists(cardPath))
+			{
+				MHHCardPackage pkg = await MHHCardPackage.BuildCardPackage(true, series, cardNumber);
+				await File.WriteAllTextAsync(cardPath, JsonConvert.SerializeObject(new MHHCardStorage()
+				{
+					CardNumber = cardNumber,
+					Series = series,
+					StoredCard = pkg.CardBytes
+				}));
 			}
 		}
 
@@ -1505,7 +1498,7 @@ namespace RathalOS.Infra
 		private static ServiceProvider ConfigureServices()
 		{
 			return new ServiceCollection()
-				.AddMemoryCache()
+				.AddMemoryCache(delegate (MemoryCacheOptions opt) { opt.SizeLimit = 17179869184; })
 				.AddSingleton<DiscordSocketClient>()
 				.AddSingleton<CommandService>()
 				.AddSingleton<InteractionEngine>()
